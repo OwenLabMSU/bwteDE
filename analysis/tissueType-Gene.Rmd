@@ -1,0 +1,142 @@
+---
+title: "Tissue type - Gene"
+author: "Jared J. Homola"
+date: "4/1/2020"
+output: html_document
+---
+This is an analysis of differential expression at the gene level between bursa and ileum tissues from blue-winged teals. The goal of this analysis is to evaluate whether the tissues should be analyzed separately.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning = FALSE, message = FALSE}
+## Load packages and data
+library(limma)
+library(edgeR)
+library(Glimma)
+library(gplots)
+library(RColorBrewer)
+library(kableExtra)
+library(tidyverse)
+
+setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/bwteDE")
+
+## Load data
+annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("./extData/rsem.gene.counts.matrix", header = TRUE)
+covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+```
+
+
+### Clean data
+Bird 36 is missing a measurement for the weight covariate and bird 19 had improper tissue-based grouping, suggesting a potential sample mix up. They are both removed from the analysis. We also rename the transcripts, dropping the "Trinity_" prefix.
+```{r, warning = FALSE, message = FALSE}
+cnt <- cnt %>%
+  select(
+    -alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("gene") %>%
+  separate(gene, into = c(NA, "pt1", "pt2", "gene")) %>%
+  unite(gene, pt1, pt2, gene) %>%
+  column_to_rownames("gene")
+
+covars <- covars %>%
+  filter(!bird %in% c("36", "19")) %>%
+  arrange(bird) %>%
+  mutate(group = str_remove(group, "-"))
+
+annot <- annot %>%
+  separate(transcript_id, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript_id, pt1, pt2, gene, isoform) %>% 
+  separate(gene_id, into = c(NA, "pt1", "pt2", "gene")) %>%
+  unite(gene_id, pt1, pt2, gene)
+```
+
+
+### Set up model effects
+```{r, warning = FALSE, message = FALSE}
+tissue <- as.factor(c(rep("Bursa", ncol(cnt)/2), rep("Ileum", ncol(cnt)/2)))
+bird <- as.factor(rep(covars$bird, 2))
+sex <- as.factor(rep(covars$sex, 2))
+age <- as.numeric(rep(covars$age, 2))
+weight <- rep(covars$wt_55, 2)
+group <- as.factor(rep(covars$group, 2))
+pool <- as.factor(c(covars$Pool.Bursa, covars$Pool.Ileum))
+```
+
+### Prep data for analysis
+Here we standardize expression levels across samples of varying depth by using the counts per million (CPM) and trimmed mean of M-values (TMM) methods. We also remove any genes that are expressed at fewer than 0.5 CPM in at least 25% of individuals.
+```{r, warning = FALSE, message = FALSE}
+#Convert to DGEList object
+dge <- DGEList(counts=cnt)
+dge$genes <- annot[match(rownames(dge$counts), annot$gene_id),]
+
+#CPM and log-CPM
+cpm <- cpm(dge)
+lcpm <- cpm(dge, log = TRUE)
+
+#### Retain only transcripts expressed at >0.5 CPM in at least 25% of individuals
+table(rowSums(dge$counts==0) == length(cnt[1,]))
+keep.exprs <- rowSums(cpm>0.5) >= length(cnt[1,])/4
+sum(keep.exprs)
+
+dge <- dge[keep.exprs,, keep.lib.sizes=FALSE]
+table(rowSums(dge$counts==0) == length(cnt[1,]))
+dim(dge)
+
+#TMM normalization
+dge <- calcNormFactors(dge, method = "TMM")
+```
+
+### Plot MDS
+```{r}
+# Sex and tissue
+col.group = as.numeric(as.factor(tissue))
+plotMDS(lcpm, labels = paste0(bird,"_",tissue), col = col.group, cex = 0.75)
+title(main="Tissue type")
+```
+
+# Differential expression analysis
+### Establish design & contrast matrices
+```{r}
+## Establish design matrix
+design = model.matrix(~ 0 +
+                        tissue*group +
+                        age +
+                        sex + 
+                        weight + 
+                        pool) 
+
+colnames(design) <- gsub("tissue", "", colnames(design))
+colnames(design) <- gsub(":", "_", colnames(design))
+
+
+contr.matrix = makeContrasts(
+  tissue = Bursa - Ileum,
+  levels = colnames(design))
+```
+
+### Mean-variance trend and sample weight plots
+```{r}
+v <- voomWithQualityWeights(dge, design, plot = TRUE)
+```
+
+### Fitting the model
+```{r}
+vfit <- lmFit(v, design) 
+vfit <- contrasts.fit(vfit, contrasts = contr.matrix)
+tfit <- treat(vfit, lfc = 1)
+plotSA(tfit)
+```
+
+### Count DE transcripts
+For a transcript to be considered differentially expressed, we require a p-value of 0.05 with a false discovery rate correction and a log fold count difference of 1.
+```{r}
+dt <- decideTests(tfit, p.value = 0.1, adjust.method = "fdr")
+summary(dt) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+```
+

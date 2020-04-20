@@ -1,0 +1,289 @@
+---
+title: "Combine controls groups - Transcript"
+author: "Jared J. Homola"
+date: "4/18/2020"
+output: html_document
+---
+This analysis asks whether it is appropriate to combine the day 1 and day 14 control groups for the analysis that asks “How does expression differ among treatment groups?”. This is for the transcript-level data.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+## Load packages and data
+library(limma)
+library(edgeR)
+library(Glimma)
+library(gplots)
+library(ggrepel)
+library(RColorBrewer)
+library(gridExtra)
+library(kableExtra)
+library(tidyverse)
+
+setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/bwteDE")
+
+## Load data
+annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("./extData/rsem.isoform.counts.matrix", header = TRUE)
+covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+```
+
+
+### Clean data
+Bird 36 is missing a measurement for the weight covariate and bird 19 had improper tissue-based grouping, suggesting a potential sample mix up. They are both removed from the analysis. We also rename the genes, dropping the "Trinity_" prefix.
+```{r, warning = FALSE, message = FALSE}
+cnt.bursa <- cnt %>%
+  select(
+    -alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("transcript") %>%
+  separate(transcript, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript, pt1, pt2, gene, isoform) %>%
+  column_to_rownames("transcript") %>% 
+  select(contains("Bursa"))
+
+cnt.ileum <- cnt %>%
+  select(
+    -alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("transcript") %>%
+  separate(transcript, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript, pt1, pt2, gene, isoform) %>%
+  column_to_rownames("transcript") %>% 
+  select(contains("Ileum"))
+
+covars <- covars %>%
+  filter(!bird %in% c("36", "19")) %>%
+  arrange(bird) %>%
+  mutate(group = str_remove(group, "-"))
+
+annot <- annot %>%
+  separate(transcript_id, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript_id, pt1, pt2, gene, isoform)
+```
+
+### Set up model effects
+```{r, warning = FALSE, message = FALSE}
+bird <- as.factor(covars$bird)
+sex <- as.factor(covars$sex)
+age <- as.numeric(covars$age)
+weight <- covars$wt_55
+group <- as.factor(covars$group)
+pool.bursa <- as.factor(covars$Pool.Bursa)
+pool.ileum <- as.factor(covars$Pool.Ileum)
+
+covars.tib <- data.frame(bird,
+                    sex,
+                    age,
+                    weight,
+                    group,
+                    pool.bursa,
+                    pool.ileum) %>% 
+  as_tibble()
+
+```
+
+### Prep data for analysis
+Here we standardize expression levels across samples of varying depth by using the counts per million (CPM) and trimmed mean of M-values (TMM) methods. We also remove any transcripts that are expressed at few than 0.5 CPM in at least 25% of individuals.
+```{r, warning = FALSE, message = FALSE}
+#Convert to DGEList object
+dge.bursa <- DGEList(counts=cnt.bursa)
+dge.bursa$genes <- annot[match(rownames(dge.bursa$counts), annot$transcript_id),]
+
+#CPM and log-CPM
+cpm.bursa <- cpm(dge.bursa)
+lcpm.bursa <- cpm(dge.bursa, log = TRUE)
+
+#### Retain only transcripts expressed at >0.5 CPM in at least 25% of individuals
+table(rowSums(dge.bursa$counts==0) == length(cnt.bursa[1,]))
+keep.exprs <- rowSums(cpm.bursa>0.5) >= length(cnt.bursa[1,])/4
+sum(keep.exprs)
+
+dge.bursa <- dge.bursa[keep.exprs,, keep.lib.sizes=FALSE]
+table(rowSums(dge.bursa$counts==0) == length(cnt.bursa[1,]))
+dim(dge.bursa)
+
+#TMM normalization
+dge.bursa <- calcNormFactors(dge.bursa, method = "TMM")
+
+### Divide out controls
+dge.bursa$samples$group <- covars.tib$group
+dge.bursa.ctl <- dge.bursa[,grep('\\bC1\\b|\\bC14\\b', dge.bursa$samples$group)]
+covars.bursa.ctl <- covars.tib %>% filter(group %in% c("C1", "C14")) %>% droplevels()
+
+
+#Convert to DGEList object
+dge.ileum <- DGEList(counts=cnt.ileum)
+dge.ileum$genes <- annot[match(rownames(dge.ileum$counts), annot$transcript_id),]
+
+#CPM and log-CPM
+cpm.ileum <- cpm(dge.ileum)
+lcpm.ileum <- cpm(dge.ileum, log = TRUE)
+
+#### Retain only transcript expressed at >0.5 CPM in at least 25% of individuals
+table(rowSums(dge.ileum$counts==0) == length(cnt.ileum[1,]))
+keep.exprs <- rowSums(cpm.ileum>0.5) >= length(cnt.ileum[1,])/4
+sum(keep.exprs)
+
+dge.ileum <- dge.ileum[keep.exprs,, keep.lib.sizes=FALSE]
+table(rowSums(dge.ileum$counts==0) == length(cnt.ileum[1,]))
+dim(dge.ileum)
+
+#TMM normalization
+dge.ileum <- calcNormFactors(dge.ileum, method = "TMM")
+
+### Divide out controls
+dge.ileum$samples$group <- covars.tib$group
+dge.ileum.ctl <- dge.ileum[,grep('\\bC1\\b|\\bC14\\b', dge.ileum$samples$group)]
+covars.ileum.ctl <- covars.tib %>% filter(group %in% c("C1", "C14")) %>% droplevels()
+```
+
+### Plot MDS
+Multidimensional scaling (MDS) plots are an ordination technique that lets us examine sample clustering based on overall transcript expression levels.
+```{r}
+# Subset bursa and ileum controls
+lcpm.bursa.ctl.C1 <- lcpm.bursa[,"C1" == covars$group]
+lcpm.bursa.ctl.C14 <- lcpm.bursa[,"C14" == covars$group]
+lcpm.bursa.ctl <- cbind(lcpm.bursa.ctl.C1, lcpm.bursa.ctl.C14)
+
+lcpm.ileum.ctl.C1 <- lcpm.ileum[,"C1" == covars$group]
+lcpm.ileum.ctl.C14 <- lcpm.ileum[,"C14" == covars$group]
+lcpm.ileum.ctl <- cbind(lcpm.ileum.ctl.C1, lcpm.ileum.ctl.C14)
+
+labels.MDS <- colnames(lcpm.bursa.ctl) %>% 
+  gsub("alignEstimateAbundance_BWTE_Bursa_", "", .) %>% 
+  as_tibble() %>% 
+  mutate(group = c(rep("C1", 4), rep("C14", 5))) %>% 
+  unite("label", value:group, sep = "_", remove = FALSE)
+
+col.group = as.numeric(as.factor(labels.MDS$group))
+plotMDS(lcpm.bursa.ctl, labels = labels.MDS$label, col = col.group, cex = 0.75)
+title(main="Control comparison - Bursa")
+
+col.group = as.numeric(as.factor(labels.MDS$group))
+plotMDS(lcpm.ileum.ctl, labels = labels.MDS$label, col = col.group, cex = 0.75)
+title(main="Control comparison - Ileum")
+```
+
+# Differential expression analysis
+### Establish design & contrast matrices
+```{r}
+## Bursa
+design.bursa = model.matrix(~ 0 +
+                        covars.bursa.ctl$group +
+                        covars.bursa.ctl$age +
+                        covars.bursa.ctl$sex + 
+                        covars.bursa.ctl$weight + 
+                        covars.bursa.ctl$pool.bursa)
+
+colnames(design.bursa) <- c("C1", "C14", "age", "sexM",
+                         "weight", "pool2")
+
+contr.matrix.bursa = makeContrasts(
+  C1vC14 = C1 - C14,
+  levels = colnames(design.bursa))
+
+v.bursa <- voomWithQualityWeights(dge.bursa.ctl, design.bursa)
+
+vfit.bursa <- lmFit(v.bursa, design.bursa) 
+vfit.bursa <- contrasts.fit(vfit.bursa, contrasts = contr.matrix.bursa)
+tfit.bursa <- treat(vfit.bursa, lfc = 1.0)
+
+## Ileum
+design.ileum = model.matrix(~ 0 +
+                        covars.ileum.ctl$group +
+                        covars.ileum.ctl$age +
+                        covars.ileum.ctl$sex + 
+                        covars.ileum.ctl$weight + 
+                        covars.ileum.ctl$pool.ileum)
+
+colnames(design.ileum) <- c("C1", "C14", "age", "sexM",
+                         "weight", "pool2")
+
+contr.matrix.ileum = makeContrasts(
+  C1vC14 = C1 - C14,
+  levels = colnames(design.ileum))
+
+v.ileum <- voomWithQualityWeights(dge.ileum.ctl, design.ileum)
+
+vfit.ileum <- lmFit(v.ileum, design.ileum) 
+vfit.ileum <- contrasts.fit(vfit.ileum, contrasts = contr.matrix.ileum)
+tfit.ileum <- treat(vfit.ileum, lfc = 1.0)
+```
+
+### Count DE transcripts
+For a gene to be considered differentially expressed, we require a p-value of 0.1 with a false discovery rate correction and a log fold count difference of 1.
+```{r}
+dt.bursa <- decideTests(tfit.bursa, p.value = 0.1, adjust.method = "fdr")
+summary(dt.bursa) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+dt.tib.bursa <- as_tibble(dt.bursa, rownames = NA) %>% 
+  rownames_to_column("transcript") %>% 
+  mutate_at(vars(starts_with("C")), as.numeric) %>% 
+  rename(C1vC14.bursa = C1vC14)
+
+dt.ileum <- decideTests(tfit.ileum, p.value = 0.1, adjust.method = "fdr")
+summary(dt.ileum) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+dt.tib <- as_tibble(dt.ileum, rownames = NA) %>% 
+  rownames_to_column("transcript") %>% 
+  mutate_at(vars(starts_with("C")), as.numeric) %>% 
+  rename(C1vC14.ileum = C1vC14) %>% 
+  left_join(dt.tib.bursa)
+```
+
+
+### Annotations for differentially expressed transcripts
+```{r message=FALSE, warning=FALSE}
+annot %>%
+  select(
+    transcript_id,
+    sprot_Top_BLASTX_hit
+  ) %>%
+  rename(transcript = transcript_id) %>% 
+  inner_join(dt.tib) %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
+  mutate_at(.vars = vars(C1vC14.ileum:C1vC14.bursa),
+            .funs = ~ ifelse(. == 1, "up", .)) %>% 
+  mutate_at(.vars = vars(C1vC14.ileum:C1vC14.bursa),
+            .funs = ~ ifelse(. == -1, "down", .)) %>% 
+  filter_at(vars(C1vC14.ileum:C1vC14.bursa), any_vars(. != 0)) %>% 
+  distinct(transcript, .keep_all = TRUE) %>% 
+  select(-SwissProt_GeneFunction) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) 
+```
+
+#### Gene functions
+```{r message=FALSE, warning=FALSE}
+annot %>%
+  select(
+    transcript_id,
+    sprot_Top_BLASTX_hit,
+    Kegg
+  ) %>%
+  rename(transcript = transcript_id) %>% 
+  inner_join(dt.tib) %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
+  mutate_at(.vars = vars(C1vC14.ileum:C1vC14.bursa),
+            .funs = ~ ifelse(. == 1, "up", .)) %>% 
+  mutate_at(.vars = vars(C1vC14.ileum:C1vC14.bursa),
+            .funs = ~ ifelse(. == -1, "down", .)) %>% 
+  filter_at(vars(C1vC14.ileum:C1vC14.bursa), any_vars(. != 0)) %>% 
+  distinct(SwissProt_GeneName, .keep_all = TRUE) %>% 
+  select(SwissProt_GeneName, Kegg) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```

@@ -1,0 +1,290 @@
+---
+title: "Late stage infection - Bursa - Transcript"
+author: "Jared J. Homola"
+date: "4/17/2020"
+output: html_document
+---
+This is an analysis of differential expression at the transcript level between shedding rate groupings based on average shedding rates for infected blue-winged teal bursa tissue samples.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+## Load packages and data
+library(limma)
+library(edgeR)
+library(Glimma)
+library(gplots)
+library(ggrepel)
+library(RColorBrewer)
+library(kableExtra)
+library(gridExtra)
+library(tidyverse)
+
+setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript")
+
+## Load data
+annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("./extData/rsem.isoform.counts.matrix", header = TRUE)
+covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+```
+
+
+### Clean data
+Bird 36 is missing a measurement for the weight covariate and bird 19 had improper tissue-based grouping, suggesting a potential sample mix up. They are both removed from the analysis. We also rename the transcripts, dropping the "Trinity_" prefix.
+```{r, warning = FALSE, message = FALSE}
+cnt <- cnt %>%
+  select(
+    -alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("transcript") %>%
+  separate(transcript, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript, pt1, pt2, gene, isoform) %>%
+  column_to_rownames("transcript") %>% 
+  select(contains("Bursa"))
+
+covars <- covars %>%
+  filter(!bird %in% c("36", "19")) %>%
+  arrange(bird) %>%
+  mutate(group = str_remove(group, "-"))
+
+annot <- annot %>%
+  separate(transcript_id, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript_id, pt1, pt2, gene, isoform)
+
+```
+
+
+### Set up model effects
+```{r, warning = FALSE, message = FALSE}
+bird <- as.factor(covars$bird)
+sex <- as.factor(covars$sex)
+age <- as.numeric(covars$age)
+weight <- covars$wt_55
+group <- recode(covars$group, C1 = "Ctl", C14 = "Ctl") %>% 
+  as.factor()
+pool <- as.factor(covars$Pool.Bursa)
+ssgroup.virus.avg <- as.factor(covars$SSgroup.virus.avg)
+
+covars.tib <- data.frame(bird,
+                    sex,
+                    age,
+                    weight,
+                    group,
+                    pool,
+                    ssgroup.virus.avg) %>% 
+  as_tibble()
+```
+
+### Prep data for analysis
+Here we standardize expression levels across samples of varying depth by using the counts per million (CPM) and trimmed mean of M-values (TMM) methods. We also remove any transcripts that are expressed at few than 0.5 CPM in at least 25% of individuals. 
+```{r, warning = FALSE, message = FALSE}
+#Convert to DGEList object
+dge <- DGEList(counts=cnt)
+dge$genes <- annot[match(rownames(dge$counts), annot$transcript_id),]
+
+#CPM and log-CPM
+cpm <- cpm(dge)
+lcpm <- cpm(dge, log = TRUE)
+
+#### Retain only transcripts expressed at >0.5 CPM in at least 25% of individuals
+table(rowSums(dge$counts==0) == length(cnt[1,]))
+keep.exprs <- rowSums(cpm>0.5) >= length(cnt[1,])/4
+sum(keep.exprs)
+
+dge <- dge[keep.exprs,, keep.lib.sizes=FALSE]
+table(rowSums(dge$counts==0) == length(cnt[1,]))
+dim(dge)
+
+#TMM normalization
+dge <- calcNormFactors(dge, method = "TMM")
+```
+
+### Subset data
+Following normalization, we subset the data based on infection groups.
+```{r, warning = FALSE, message = FALSE}
+#Assign groups in DGElist
+dge$samples$group <- covars.tib$group
+
+### Divide out I5
+dge.I5 <- dge[,grep('I5', dge$samples$group)]
+covars.I5 <- covars.tib %>% filter(group == "I5")
+```
+
+
+# Differential expression analysis
+```{r, warning = FALSE, message = FALSE,}
+## Establish design matrix: I5
+design.I5 = model.matrix(~ 0 +
+                        factor(covars.I5$ssgroup.virus.avg) +
+                        covars.I5$age +
+                        covars.I5$sex + 
+                        covars.I5$weight + 
+                        covars.I5$pool)
+
+colnames(design.I5) <- c("HIGH", "LOW", "MODERATE",
+                         "age", "sexM", "weight", 
+                         "pool2", "pool3")
+
+
+contr.matrix.I5 = makeContrasts(
+  LvM = LOW - MODERATE,
+  MvH = MODERATE - HIGH,
+  LvH = LOW - HIGH,
+  levels = colnames(design.I5))
+
+## Mean-variance trend plots
+v.I5 <- voomWithQualityWeights(dge.I5, design.I5, plot = FALSE)
+
+#Fitting models
+vfit.I5 <- lmFit(v.I5, design.I5) 
+vfit.I5 <- contrasts.fit(vfit.I5, contrasts = contr.matrix.I5)
+tfit.I5 <- treat(vfit.I5, lfc = 1.0)
+
+## Identify DE genes
+dt.I5 <- decideTests(tfit.I5, p.value = 0.1, adjust.method = "fdr")
+dt.tib.I5 <- as_tibble(dt.I5, rownames = NA) %>% 
+  rownames_to_column("transcript") %>% 
+  mutate_at(vars(starts_with("L")), as.numeric) %>% 
+  mutate_at(vars(starts_with("M")), as.numeric) %>% 
+  rename(LvM.I5 = LvM,
+         MvH.I5 = MvH,
+         LvH.I5 = LvH)
+
+dt.tib <- dt.tib.I5 %>% 
+  mutate_at(vars(starts_with("L")), as.numeric) %>% 
+  mutate_at(vars(starts_with("M")), as.numeric) %>% 
+  filter_at(vars(LvM.I5:LvH.I5), any_vars(. != 0))
+```
+
+### Numbers of DE genes
+```{r}
+allResults <- as.data.frame(summary(dt.I5)) %>% 
+  filter(Var1 != "NotSig")
+
+kable(allResults) %>%
+  kable_styling("striped", full_width = F)
+```
+
+### Volcano plot
+```{r, warning = FALSE, message = FALSE, fig.height = 10, fig.width = 10, fig.align = "center"}
+tmp1 <- topTreat(tfit.I5, coef = 1, n = Inf)
+results1 <- mutate(tmp1, sig=ifelse(tmp1$adj.P.Val<0.1, "Sig", "Not Sig"))
+p1 <- ggplot(results1, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Low vs. Moderate shedding") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+
+tmp2 <- topTreat(tfit.I5, coef = 2, n = Inf)
+results2 <- mutate(tmp2, sig=ifelse(tmp2$adj.P.Val<0.1, "Sig", "Not Sig"))
+p2 <- ggplot(results2, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Moderate vs. High shedding") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp3 <- topTreat(tfit.I5, coef = 3, n = Inf)
+results3 <- mutate(tmp3, sig=ifelse(tmp3$adj.P.Val<0.1, "Sig", "Not Sig"))
+p3 <- ggplot(results3, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Low vs. High shedding") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+grid.arrange(p1, p2, p3, nrow = 1)
+```
+
+
+### Heatmap
+```{r, warning = FALSE, message = FALSE, fig.height = 14, fig.width = 10, fig.align = "center"}
+# Get the transcript names for DE transcripts
+deTransCounts <- lcpm %>% 
+  as_tibble(rownames = NA) %>% 
+  rownames_to_column("transcript") %>%
+  filter(transcript %in% dt.tib$transcript) %>% 
+  column_to_rownames("transcript")
+
+newNames <- colnames(deTransCounts) %>% 
+  as_tibble() %>% 
+  separate(value, into = c(NA, NA, "tissue", "sample", NA)) %>% 
+  mutate(group1 = group,
+    group2 = ssgroup.virus.avg) %>% 
+  unite("sample", 1:4, sep = "_")
+
+colnames(deTransCounts) <- newNames$sample
+deTransCounts <- deTransCounts %>% 
+  select(matches("(*I5|*I5)")) %>% 
+  as.matrix()
+  
+## Set up palette
+mypalette <- brewer.pal(11,"RdYlBu")
+morecols <- colorRampPalette(mypalette)
+# Set up colour vector for celltype variable
+covars.I5 <- covars.tib %>% 
+  filter(group == "I5")
+col.diff <- c("black", "purple", "orange", "green")[covars.I5$ssgroup.virus.avg]
+
+# Plot the heatmap
+heatmap.2(deTransCounts,
+          col = rev(morecols(50)),
+          trace = "none", 
+          main = "Group DE transcripts",
+          margins = c(15, 10),
+          ColSideColors = col.diff, scale ="row")
+```
+
+### Annotations for differentially expressed transcripts
+```{r message=FALSE, warning=FALSE}
+annot %>%
+  select(
+    transcript_id,
+    sprot_Top_BLASTX_hit
+  ) %>%
+  rename(transcript = transcript_id) %>% 
+  inner_join(dt.tib) %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
+  mutate_at(.vars = vars(LvM.I5:LvH.I5),
+            .funs = ~ ifelse(. == 1, "up", .)) %>% 
+  mutate_at(.vars = vars(LvM.I5:LvH.I5),
+            .funs = ~ ifelse(. == -1, "down", .)) %>% 
+  filter_at(vars(LvM.I5:LvH.I5), any_vars(. != 0)) %>% 
+  distinct(transcript, .keep_all = TRUE) %>% 
+  select(-SwissProt_GeneFunction) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+#### Transcript functions
+```{r message=FALSE, warning=FALSE}
+annot %>%
+  select(
+    transcript_id,
+    sprot_Top_BLASTX_hit,
+    Kegg) %>%
+  rename(transcript = transcript_id) %>% 
+  inner_join(dt.tib) %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
+  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% 
+  distinct(transcript, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %>% 
+  select(transcript, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>% 
+  filter(SwissProt_GeneName != ".") %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```

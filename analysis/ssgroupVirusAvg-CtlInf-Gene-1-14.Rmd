@@ -63,7 +63,7 @@ covars <- covars %>%
 
 annot <- annot %>%
   separate(transcript_id, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
-  unite(transcript_id, pt1, pt2, gene, isoform) %> % 
+  unite(transcript_id, pt1, pt2, gene, isoform) %>% 
   separate(gene_id, into = c(NA, "pt1", "pt2", "gene")) %>%
   unite(gene_id, pt1, pt2, gene)
 ```

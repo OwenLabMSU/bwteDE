@@ -1,7 +1,7 @@
 ---
 title: "Treatment Groups - Bursa - Gene"
 author: "Jared J. Homola"
-date: "4/12/2020"
+date: "6/16/2020"
 output: html_document
 ---
 This is an analysis of differential expression at the gene level between treatment groups for control and infected blue-winged teal bursa samples.
@@ -20,14 +20,13 @@ library(ggrepel)
 library(RColorBrewer)
 library(gridExtra)
 library(kableExtra)
+library(topGO)
 library(tidyverse)
 
-setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/bwteDE")
-
 ## Load data
-annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
-cnt <- read.table("./extData/rsem.gene.counts.matrix", header = TRUE)
-covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+annot <- read.delim("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/rsem.gene.counts.matrix", header = TRUE)
+covars <- read.csv("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
 ```
 
 
@@ -282,5 +281,92 @@ annot %>%
   select(gene, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>% 
   filter(SwissProt_GeneName != ".") %>% 
   kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+
+
+### Gene Ontology Enrichment Analysis
+```{r message=FALSE, warning=FALSE}
+topGO.mappings <- readMappings("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/GOdbGene.txt", sep = "\t", IDsep = ",")
+
+goEnrich <- function(targetComp, ...) {
+  DE.results <- dt.tib %>% filter(!!sym(targetComp) != 0)
+  
+  all.genes <- sort(unique(as.character(rownames(tfit$p.value))))
+  int.genes <- DE.results$gene
+  int.genes <- factor(as.integer(all.genes %in% int.genes))
+  names(int.genes) = all.genes
+  
+  go.obj.BP <- new("topGOdata", ontology='BP',
+              allGenes = int.genes,
+              annot = annFUN.gene2GO,
+              nodeSize = 5,
+              gene2GO = topGO.mappings)
+
+  go.obj.MF <- new("topGOdata", ontology='MF',
+                 allGenes = int.genes,
+                 annot = annFUN.gene2GO,
+                 nodeSize = 5,
+                 gene2GO = topGO.mappings)
+
+  go.obj.CC <- new("topGOdata", ontology='CC',
+                 allGenes = int.genes,
+                 annot = annFUN.gene2GO,
+                 nodeSize = 5,
+                 gene2GO = topGO.mappings)
+  
+  results.BP <- runTest(go.obj.BP, algorithm = "elim", statistic = "fisher")
+
+  results.tab.BP <- GenTable(object = go.obj.BP, 
+                          elimFisher = results.BP, 
+                          topNodes = 50) %>% 
+    as_tibble() %>% 
+    mutate(pVal = as.numeric(elimFisher)) %>% 
+    filter(pVal < 0.01) %>% 
+    mutate(Domain = "BP") %>% 
+    mutate(Comparison = targetComp)
+  
+  results.MF <- runTest(go.obj.MF, algorithm = "elim", statistic = "fisher")
+  
+  results.tab.MF <- GenTable(object = go.obj.MF, 
+                          elimFisher = results.MF, 
+                          topNodes = 50) %>% 
+    as_tibble() %>% 
+    mutate(pVal = as.numeric(elimFisher)) %>% 
+    filter(pVal < 0.01) %>% 
+    mutate(Domain = "MF") %>% 
+    mutate(Comparison = targetComp)
+  
+  results.CC <- runTest(go.obj.CC, algorithm = "elim", statistic = "fisher")
+  
+  results.tab.CC <- GenTable(object = go.obj.CC, 
+                          elimFisher = results.CC, 
+                          topNodes = 50) %>% 
+    as_tibble() %>% 
+    mutate(pVal = as.numeric(elimFisher)) %>% 
+    filter(pVal < 0.01) %>% 
+    mutate(Domain = "CC") %>% 
+    mutate(Comparison = targetComp)
+  
+  rbind(results.tab.BP,
+    results.tab.MF,
+    results.tab.CC)
+}
+
+results <- list()
+
+for(z in unique(names(dt.tib)[-1])) {
+  if (dt.tib %>% 
+      filter(!!sym(z) != 0) %>% 
+      nrow(.) > 0)
+  results[[length(results)+1]] <- goEnrich(z)
+}
+
+results.tib <- bind_rows(results, .id = "column_label") %>%
+  select(-column_label) %>% 
+  arrange(GO.ID, Comparison)
+
+kable(results.tib) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```

@@ -1,7 +1,7 @@
 ---
 title: "Treatment Groups - Bursa - Transcript"
 author: "Jared J. Homola"
-date: "4/12/2020"
+date: "6/16/2020"
 output: html_document
 ---
 This is an analysis of differential expression at the transcript level between treatment groups for control and infected blue-winged teal bursa samples.
@@ -20,14 +20,13 @@ library(ggrepel)
 library(RColorBrewer)
 library(gridExtra)
 library(kableExtra)
+library(topGO)
 library(tidyverse)
 
-setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/bwteDE")
-
 ## Load data
-annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
-cnt <- read.table("./extData/rsem.isoform.counts.matrix", header = TRUE)
-covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+annot <- read.delim("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/rsem.isoform.counts.matrix", header = TRUE)
+covars <- read.csv("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
 ```
 
 

@@ -25,9 +25,9 @@ library(tidyverse)
 setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/bwteDE")
 
 ## Load data
-annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
-cnt <- read.table("./extData/rsem.gene.counts.matrix", header = TRUE)
-covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+annot <- read.delim("../extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("../extData/rsem.gene.counts.matrix", header = TRUE)
+covars <- read.csv("../extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
 ```
 
 

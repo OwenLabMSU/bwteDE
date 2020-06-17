@@ -1,7 +1,7 @@
 ---
 title: "Late stage infection - Bursa - Transcript"
 author: "Jared J. Homola"
-date: "4/17/2020"
+date: "6/16/2020"
 output: html_document
 ---
 This is an analysis of differential expression at the transcript level between shedding rate groupings based on average shedding rates for infected blue-winged teal bursa tissue samples.
@@ -18,16 +18,15 @@ library(Glimma)
 library(gplots)
 library(ggrepel)
 library(RColorBrewer)
-library(kableExtra)
 library(gridExtra)
+library(kableExtra)
+library(topGO)
 library(tidyverse)
 
-setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript")
-
 ## Load data
-annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
-cnt <- read.table("./extData/rsem.isoform.counts.matrix", header = TRUE)
-covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+annot <- read.delim("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/rsem.isoform.counts.matrix", header = TRUE)
+covars <- read.csv("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
 ```
 
 
@@ -210,40 +209,50 @@ grid.arrange(p1, p2, p3, nrow = 1)
 
 ### Heatmap
 ```{r, warning = FALSE, message = FALSE, fig.height = 14, fig.width = 10, fig.align = "center"}
-# Get the transcript names for DE transcripts
-deTransCounts <- lcpm %>% 
-  as_tibble(rownames = NA) %>% 
-  rownames_to_column("transcript") %>%
-  filter(transcript %in% dt.tib$transcript) %>% 
-  column_to_rownames("transcript")
+# Get the gene names for DE genes
+lcpm2 <- as_tibble(dge.I5$counts) %>% 
+  cpm(., log = TRUE)
 
-newNames <- colnames(deTransCounts) %>% 
+newNames <- colnames(lcpm2) %>% 
   as_tibble() %>% 
-  separate(value, into = c(NA, NA, "tissue", "sample", NA)) %>% 
-  mutate(group1 = group,
-    group2 = ssgroup.virus.avg) %>% 
-  unite("sample", 1:4, sep = "_")
+  separate(value, into = c(NA, NA, NA, "sample", NA)) %>% 
+  bind_cols(covars.I5) %>% 
+  unite("newNames", ssgroup.virus.avg, group, bird)
 
-colnames(deTransCounts) <- newNames$sample
-deTransCounts <- deTransCounts %>% 
-  select(matches("(*I5|*I5)")) %>% 
+colOrder <- bind_cols(covars.I5) %>% 
+  mutate(ssgroup.virus.avg = fct_relevel(ssgroup.virus.avg, "LOW", "MODERATE", "HIGH")) %>%
+  arrange(ssgroup.virus.avg, group, bird) %>% 
+  unite("newNames", ssgroup.virus.avg, group, bird)
+
+colnames(lcpm2) <- newNames$newNames
+lcpm2 <- lcpm2[, colOrder$newNames]
+
+deGeneCounts <- lcpm2 %>% 
+  as_tibble() %>% 
+  mutate(gene = rownames(dge$counts)) %>% 
+  filter(gene %in% dt.tib$transcript) %>% 
+  column_to_rownames("gene") %>% 
   as.matrix()
-  
+
 ## Set up palette
 mypalette <- brewer.pal(11,"RdYlBu")
 morecols <- colorRampPalette(mypalette)
-# Set up colour vector for celltype variable
-covars.I5 <- covars.tib %>% 
-  filter(group == "I5")
-col.diff <- c("black", "purple", "orange", "green")[covars.I5$ssgroup.virus.avg]
+
+hc <- hclust(as.dist(1-cor(t(deGeneCounts))))
 
 # Plot the heatmap
-heatmap.2(deTransCounts,
+heatmap.2(deGeneCounts,
+          Colv = FALSE,
+          Rowv = as.dendrogram(hc),
           col = rev(morecols(50)),
-          trace = "none", 
-          main = "Group DE transcripts",
-          margins = c(15, 10),
-          ColSideColors = col.diff, scale ="row")
+          trace = "none",
+          colsep = c(5, 10),
+          dendrogram = "row",
+          density.info = "none",
+          key = TRUE,
+          #main = "Ileum - Gene level",
+          margins = c(10, 10),
+          scale ="row")
 ```
 
 ### Annotations for differentially expressed transcripts
@@ -286,5 +295,90 @@ annot %>%
   select(transcript, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>% 
   filter(SwissProt_GeneName != ".") %>% 
   kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+### Gene Ontology Enrichment Analysis
+```{r message=FALSE, warning=FALSE}
+topGO.mappings <- readMappings("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/GOdbTrans.txt", sep = "\t", IDsep = ",")
+
+goEnrich <- function(targetComp, ...) {
+  DE.results <- dt.tib %>% filter(!!sym(targetComp) != 0)
+  
+  all.genes <- sort(unique(as.character(rownames(dge$counts))))
+  int.genes <- DE.results$transcript
+  int.genes <- factor(as.integer(all.genes %in% int.genes))
+  names(int.genes) = all.genes
+  
+  go.obj.BP <- new("topGOdata", ontology='BP',
+              allGenes = int.genes,
+              annot = annFUN.gene2GO,
+              nodeSize = 5,
+              gene2GO = topGO.mappings)
+
+  go.obj.MF <- new("topGOdata", ontology='MF',
+                 allGenes = int.genes,
+                 annot = annFUN.gene2GO,
+                 nodeSize = 5,
+                 gene2GO = topGO.mappings)
+
+  go.obj.CC <- new("topGOdata", ontology='CC',
+                 allGenes = int.genes,
+                 annot = annFUN.gene2GO,
+                 nodeSize = 5,
+                 gene2GO = topGO.mappings)
+  
+  results.BP <- runTest(go.obj.BP, algorithm = "elim", statistic = "fisher")
+
+  results.tab.BP <- GenTable(object = go.obj.BP, 
+                          elimFisher = results.BP, 
+                          topNodes = 50) %>% 
+    as_tibble() %>% 
+    mutate(pVal = as.numeric(elimFisher)) %>% 
+    filter(pVal < 0.01) %>% 
+    mutate(Domain = "BP") %>% 
+    mutate(Comparison = targetComp)
+  
+  results.MF <- runTest(go.obj.MF, algorithm = "elim", statistic = "fisher")
+  
+  results.tab.MF <- GenTable(object = go.obj.MF, 
+                          elimFisher = results.MF, 
+                          topNodes = 50) %>% 
+    as_tibble() %>% 
+    mutate(pVal = as.numeric(elimFisher)) %>% 
+    filter(pVal < 0.01) %>% 
+    mutate(Domain = "MF") %>% 
+    mutate(Comparison = targetComp)
+  
+  results.CC <- runTest(go.obj.CC, algorithm = "elim", statistic = "fisher")
+  
+  results.tab.CC <- GenTable(object = go.obj.CC, 
+                          elimFisher = results.CC, 
+                          topNodes = 50) %>% 
+    as_tibble() %>% 
+    mutate(pVal = as.numeric(elimFisher)) %>% 
+    filter(pVal < 0.01) %>% 
+    mutate(Domain = "CC") %>% 
+    mutate(Comparison = targetComp)
+  
+  rbind(results.tab.BP,
+    results.tab.MF,
+    results.tab.CC)
+}
+
+results <- list()
+
+for(z in unique(names(dt.tib)[-1])) {
+  if (dt.tib %>% 
+      filter(!!sym(z) != 0) %>% 
+      nrow(.) > 0)
+  results[[length(results)+1]] <- goEnrich(z)
+}
+
+results.tib <- bind_rows(results, .id = "column_label") %>%
+  select(-column_label) %>% 
+  arrange(GO.ID, Comparison)
+
+kable(results.tib) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```

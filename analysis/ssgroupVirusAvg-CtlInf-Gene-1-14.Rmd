@@ -1,7 +1,7 @@
 ---
 title: "Control vs. Infected groupings - Gene"
 author: "Jared J. Homola"
-date: "4/19/2020"
+date: "6/8/2020"
 output: html_document
 ---
 This is an analysis of differential expression at the gene level between control and infected groupings of blue-winged teals.
@@ -25,9 +25,9 @@ library(tidyverse)
 setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/")
 
 ## Load data
-annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
-cnt <- read.table("./extData/rsem.gene.counts.matrix", header = TRUE)
-covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+annot <- read.delim("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/rsem.gene.counts.matrix", header = TRUE)
+covars <- read.csv("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
 ```
 
 
@@ -240,7 +240,7 @@ dt.tib.ileum <- as_tibble(dt.ileum, rownames = NA) %>%
 
 dt.tib <- dt.tib.bursa %>% 
   full_join(dt.tib.ileum) %>% 
-  replace(., is.na(.), "0") %>% 
+  replace(., is.na(.), 0) %>% 
   mutate_at(vars(contains("v")), as.numeric)
 
 ```
@@ -417,31 +417,44 @@ deGeneCounts.ileum <- lcpm.ileum %>%
   filter(gene %in% dt.tib.ileum$gene) %>% 
   column_to_rownames("gene")
 
-newNames <- colnames(deGeneCounts.ileum) %>% 
-  as_tibble() %>% 
-  separate(value, into = c(NA, NA, "tissue", "sample", NA)) %>% 
-  mutate(group1 = group,
-    group2 = ssgroup.virus.sac) %>% 
-  unite("sample", 1:4, sep = "_")
+newNames1 <- colnames(deGeneCounts.ileum) %>%
+  as_tibble() %>%
+  separate(value, into = c(NA, NA, "sample", NA, "SSAVG")) %>%
+  #mutate(group = fct_relevel(group, "Ctl", "I01", "I03", "I05", "I14")) %>%
+  #arrange(group) %>%
+  unite("sample", 2:1, sep = "_")
+
+colnames(deGeneCounts.ileum) <- newNames1$sample
+deGeneCounts.ileum <- deGeneCounts.ileum %>% 
+  dplyr::select(order(colnames(.))) %>%
+  as.matrix()
 
 colnames(deGeneCounts.ileum) <- newNames$sample
 deGeneCounts.ileum <- deGeneCounts.ileum %>% 
   select(matches("(*C1_|*I1_)")) %>% 
   as.matrix()
+
+
   
 ## Set up palette
 mypalette <- brewer.pal(11,"RdYlBu")
 morecols <- colorRampPalette(mypalette)
-# Set up colour vector for celltype variable
-col.diff <- c("black", "purple", "orange", "green")[covars.1$ssgroup.virus.sac]
+
+hc <- hclust(as.dist(1-cor(t(deGeneCounts.ileum))))
 
 # Plot the heatmap
 heatmap.2(deGeneCounts.ileum,
+          Colv = FALSE,
+          Rowv = as.dendrogram(hc),
           col = rev(morecols(50)),
-          trace = "none", 
-          main = "Group DE genes",
-          margins = c(10, 10),
-          ColSideColors = col.diff, scale ="row")
+          trace = "none",
+          colsep = c(9, 21, 33, 45),
+          dendrogram = "row",
+          density.info = "none",
+          key = TRUE,
+          #main = "Ileum - Gene level",
+          margins = c(5, 10),
+          scale ="row")
 ```
 
 ### Heatmap: Bursa
@@ -467,16 +480,22 @@ deGeneCounts.bursa <- deGeneCounts.bursa %>%
 ## Set up palette
 mypalette <- brewer.pal(11,"RdYlBu")
 morecols <- colorRampPalette(mypalette)
-# Set up colour vector for celltype variable
-col.diff <- c("black", "purple", "orange", "green")[covars.1$ssgroup.virus.sac]
+
+hc <- hclust(as.dist(1-cor(t(deGeneCounts.bursa ))))
 
 # Plot the heatmap
 heatmap.2(deGeneCounts.bursa,
+          Colv = FALSE,
+          Rowv = as.dendrogram(hc),
           col = rev(morecols(50)),
-          trace = "none", 
-          main = "Group DE genes",
-          margins = c(10, 10),
-          ColSideColors = col.diff, scale ="row")
+          trace = "none",
+          colsep = c(9, 21, 33, 45),
+          dendrogram = "row",
+          density.info = "none",
+          key = TRUE,
+          #main = "Ileum - Gene level",
+          margins = c(5, 10),
+          scale ="row")
 ```
 
 ### Annotations for differentially expressed genes

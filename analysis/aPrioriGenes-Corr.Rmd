@@ -1,0 +1,429 @@
+---
+title: "a Priori Gene Analysis - Correlations"
+author: "Jared J. Homola"
+date: "5/26/2020"
+output: html_document
+---
+These analyses examine the relationship between expression levels and viral titer for a set of genes that we hypothesize have a relationship with viral infection. The overall strategy is to:  
+  
+  1. Identify a list of candidate genes based on the literature and previous analyses.    
+  2. Subset our overall set of transcripts to include only those with an annotation containing the name of the candidate gene in the SwissProt gene name, SwissProt gene function, KEGG pathway, or EggNOG gene orthology annotations.  
+  3. Manually filter search results to remove non-target inclusions  
+  4. Remove transcripts with no variation in expression for each comparison (e.g., bursa at transcript-level)  
+  5. Perform correlation analysis. 
+  6. Plot the results.
+    
+Note: These analyses include only control and infected birds sacrificed at 1 day post-infection
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, results = 'hide'}
+## Load packages and data
+library(tidyverse)
+library(edgeR)
+library(broom)
+library(kableExtra)
+library(ggrepel)
+
+setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/")
+
+## Load data
+annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt.trans <- read.table("./extData/rsem.isoform.counts.matrix", header = TRUE)
+cnt.gene <- read.table("./extData/rsem.gene.counts.matrix", header = TRUE)
+covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+targets <- read_delim("./extData/aPrioriTranscripts_V2.csv", delim = ",") %>%
+  filter(include == "Yes" | include == "yes")
+
+## Clean data
+cnt.bursa.gene <- cnt.gene %>%
+  select(-alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("gene") %>%
+  separate(gene, into = c(NA, "pt1", "pt2", "gene", NA)) %>%
+  unite(gene, pt1, pt2, gene) %>%
+  column_to_rownames("gene") %>%
+  select(contains("Bursa"))
+
+cnt.ileum.gene <- cnt.gene %>%
+  select(-alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("gene") %>%
+  separate(gene, into = c(NA, "pt1", "pt2", "gene", NA)) %>%
+  unite(gene, pt1, pt2, gene) %>%
+  column_to_rownames("gene") %>%
+  select(contains("Ileum"))
+
+cnt.bursa.trans <- cnt.trans %>%
+  select(-alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("transcript") %>%
+  separate(transcript, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript, pt1, pt2, gene, isoform) %>%
+  column_to_rownames("transcript") %>%
+  select(contains("Bursa"))
+
+cnt.ileum.trans <- cnt.trans %>%
+  select(-alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("transcript") %>%
+  separate(transcript, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript, pt1, pt2, gene, isoform) %>%
+  column_to_rownames("transcript") %>%
+  select(contains("Ileum"))
+
+covars <- covars %>%
+  filter(!bird %in% c("36", "19")) %>%
+  arrange(bird) %>%
+  mutate(group = str_remove(group, "-"))
+
+annot <- annot %>%
+  separate(transcript_id, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(gene_id, pt1, pt2, gene, remove = FALSE) %>%
+  unite(transcript_id, pt1, pt2, gene, isoform)
+
+#### Calculate log(CPM) and assemble master DFs ####
+#Convert to DGEList object
+dge.bursa.trans <- DGEList(counts=cnt.bursa.trans)
+dge.bursa.gene <- DGEList(counts=cnt.bursa.gene)
+dge.ileum.trans <- DGEList(counts=cnt.ileum.trans)
+dge.ileum.gene <- DGEList(counts=cnt.ileum.gene)
+
+#CPM and log-CPM
+lcpm.bursa.trans <- cpm(dge.bursa.trans)
+lcpm.bursa.gene <- cpm(dge.bursa.gene)
+lcpm.ileum.trans <- cpm(dge.ileum.trans)
+lcpm.ileum.gene <- cpm(dge.ileum.gene)
+
+## Master lcpm tibs
+# Trans
+lcpm.bursa.tmp <- lcpm.bursa.trans %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("transcript")
+lcpm.ileum.tmp <- lcpm.ileum.trans %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("transcript")
+
+lcpm.trans <- lcpm.bursa.tmp %>%
+  full_join(lcpm.ileum.tmp) %>%
+  replace(., is.na(.), "0") %>%
+  filter(transcript %in% targets$transcript_id) %>%
+  pivot_longer(cols = contains("_"),
+               names_to = "sample",
+               values_to = "lcpm") %>%
+  separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
+  mutate(bird = as.integer(bird)) %>%
+  left_join(covars, by = "bird") %>%
+  filter(group == "I1") %>%
+  #filter(group == "I1" | group == "C1") %>%
+  mutate(levelGT = "transcript", identifier = transcript) %>%
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac) %>%
+  mutate(log.virus.sac = log10(virus.sac+1))
+
+
+# Gene
+lcpm.bursa.tmp <- lcpm.bursa.gene %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("gene")
+lcpm.ileum.tmp <- lcpm.ileum.gene %>%
+  as_tibble(rownames = NA) %>%
+  rownames_to_column("gene")
+
+lcpm.all <- lcpm.bursa.tmp %>%
+  full_join(lcpm.ileum.tmp) %>%
+  replace(., is.na(.), "0")  %>%
+  filter(gene %in% targets$gene_id) %>%
+  pivot_longer(cols = contains("_"),
+               names_to = "sample",
+               values_to = "lcpm") %>%
+  separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
+  mutate(bird = as.integer(bird)) %>%
+  left_join(covars, by = "bird") %>%
+  filter(group == "I1") %>%
+  #filter(group == "I1" | group == "C1") %>%  
+  mutate(levelGT = "gene", identifier = gene) %>%
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac) %>%
+  mutate(log.virus.sac = log10(virus.sac+1)) %>%
+  bind_rows(lcpm.trans)
+
+#### Gene query database ####
+annot.all <- annot %>%
+  select(transcript_id,
+         gene_id,
+         sprot_Top_BLASTX_hit,
+         sprot_Top_BLASTP_hit,
+         gene_ontology_BLASTX,
+         gene_ontology_BLASTP,
+         Kegg,
+         eggnog,
+         Pfam) %>%
+  separate(sprot_Top_BLASTX_hit, into = c("sprot_geneName_BlastX", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%
+  separate(sprot2, sep = "=", into = c(NA, "sprot_geneFunction_BlastX")) %>%
+  separate(sprot_geneFunction_BlastX, sep = ";", into = c("sprot_geneFunction_BlastX", NA)) %>%
+  separate(sprot_Top_BLASTP_hit, into = c("sprot_geneName_BlastP", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%
+  separate(sprot2, sep = "=", into = c(NA, "sprot_geneFunction_BlastP")) %>%
+  separate(sprot_geneFunction_BlastP, sep = ";", into = c("sprot_geneFunction_BlastP", NA)) %>%
+  separate(gene_ontology_BLASTX, sep = "\\`", into = paste("GO_BlastX", 1:5, sep = "_"), extra = "drop", fill = "right") %>%
+  separate(gene_ontology_BLASTP, sep = "\\`", into = paste("GO_BlastP", 1:5, sep = "_"), extra = "drop", fill = "right") %>%
+  separate(Pfam, sep = "\\`", into = paste("Pfam", 1:5, sep = "_"), extra = "drop", fill = "right") %>%
+  as_tibble()
+```
+
+## Functions for analyzing and plotting data
+```{r, message = FALSE, warning = FALSE, echo = TRUE}
+aprioriAnalysis <- function(target, targetTissue, targetLevel, ...) {
+  datSet <- lcpm.all %>%
+    filter(levelGT == "targetLevel",
+           identifier == "target",
+           tissue == "targetTissue")
+  
+  correl <- cor.test(datSet$virus.sac, datSet$lcpm)
+  #as.data.frame(c(correl$estimate, correl$p.value)) %>% rename(out = `c(correl$estimate, correl$p.value)`) %>% as_tibble()
+}
+
+aprioriPlotting <- function(target, targetTissue, targetLevel, ...) {
+  annotation <- annot.all %>%
+    filter(transcript_id == target | gene_id == target) %>%
+    filter(sprot_geneName_BlastX != ".") %>%
+    select(sprot_geneName_BlastX) %>%
+    slice(1)
+  
+  plot <- lcpm.all %>%
+  filter(levelGT == "gene",
+         identifier == "DN10010_c2_g1",
+         tissue == "Bursa") %>% 
+  ggplot(aes(x = virus.sac, y = lcpm)) +
+  geom_point(size = 2) +
+  ylab("Counts per millions") +
+  xlab("Viral titer on day of sacrifice") +
+  theme_bw(base_size = 12) +
+  labs(title=paste0(annotation[1], " - ", target),
+       subtitle=paste0(targetTissue, " - ", targetLevel,
+                       "; Pearson's Rho = ", round(correl$estimate, 3),
+                       "; p-value = ", correl$p.value))
+  print(plot)
+}
+```
+
+## Run analysis loop
+#### Script example - others hidden
+```{r, message = FALSE, warning = FALSE, echo = TRUE}
+#### Run analysis loop ####
+targetTissue <- "Ileum" ## Bursa or Ileum
+targetLevel <- "gene" ## gene or transcript
+set <- lcpm.all %>%
+  filter(levelGT == targetLevel, tissue == targetTissue) %>%
+  group_by(identifier) %>%
+  summarize(varLCPM = round(var(lcpm), 5)) %>%
+  filter(varLCPM > 0)
+
+results <- list()
+
+for(z in unique(set$identifier)[1]) {
+  results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)
+}
+
+aprioriAnalysis("DN10010_c2_g1", targetTissue, targetLevel)
+
+results.IG.tib <- bind_rows(results, .id = "column_label") %>%
+  select(-column_label) %>% 
+  mutate(variable = rep(c("Est", "pval"), nrow(.) / 2), 
+           key = rep(1:(nrow(.) / 2), each = 2)) %>% 
+  pivot_wider(id_cols = key, names_from = variable, values_from = out) %>% 
+  select(-key) %>% 
+  mutate(ID = unique(set$identifier)[1:4])
+
+results.IG.tmp <- results.IG.tib %>%
+  filter(result.type == "p.value") %>%
+  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1)
+
+results.IG.sig <- results.IG.tib %>% filter(identifier %in% results.IG.tmp$identifier)
+```
+  
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+#### Run analysis loop ####
+targetTissue <- "Ileum" ## Bursa or Ileum
+targetLevel <- "transcript" ## gene or transcript
+set <- lcpm.all %>%
+  filter(levelGT == targetLevel, tissue == targetTissue) %>%
+  group_by(identifier) %>%
+  summarize(varLCPM = round(var(lcpm), 5)) %>%
+  filter(varLCPM > 0)
+
+results <- list()
+
+for(z in unique(set$identifier)) {
+  results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)
+}
+
+results.IT.tib <- bind_rows(results, .id = "column_label") %>%
+  select(-column_label)
+
+results.IT.tmp <- results.IT.tib %>%
+  filter(result.type == "p.value") %>%
+  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1)
+
+results.IT.sig <- results.IT.tib %>% filter(identifier %in% results.IT.tmp$identifier)
+
+
+
+#### Run analysis loop ####
+targetTissue <- "Bursa" ## Bursa or Ileum
+targetLevel <- "transcript" ## gene or transcript
+set <- lcpm.all %>%
+  filter(levelGT == targetLevel, tissue == targetTissue) %>%
+  group_by(identifier) %>%
+  summarize(varLCPM = round(var(lcpm), 5)) %>%
+  filter(varLCPM > 0)
+
+results <- list()
+
+for(z in unique(set$identifier)) {
+  results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)
+}
+
+results.BT.tib <- bind_rows(results, .id = "column_label") %>%
+  select(-column_label)
+
+results.BT.tmp <- results.BT.tib %>%
+  filter(result.type == "p.value") %>%
+  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1)
+
+results.BT.sig <- results.BT.tib %>% filter(identifier %in% results.BT.tmp$identifier)
+
+
+
+#### Run analysis loop ####
+targetTissue <- "Bursa" ## Bursa or Ileum
+targetLevel <- "gene" ## gene or transcript
+set <- lcpm.all %>%
+  filter(levelGT == targetLevel, tissue == targetTissue) %>%
+  group_by(identifier) %>%
+  summarize(varLCPM = round(var(lcpm), 5)) %>%
+  filter(varLCPM > 0)
+
+results <- list()
+
+for(z in unique(set$identifier)) {
+  results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)
+}
+
+results.BG.tib <- bind_rows(results, .id = "column_label") %>%
+  select(-column_label)
+
+results.BG.tmp <- results.BG.tib %>%
+  filter(result.type == "p.value") %>%
+  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1)
+
+results.BG.sig <- results.BG.tib %>% filter(identifier %in% results.BG.tmp$identifier)
+```  
+
+
+## Table of results
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+BT.tib <- length(unique(results.BT.tib$identifier))
+BG.tib <- length(unique(results.BG.tib$identifier))
+IT.tib <- length(unique(results.IT.tib$identifier))
+IG.tib <- length(unique(results.IG.tib$identifier))
+
+BT.sig <- length(unique(results.BT.sig$identifier))
+BG.sig <- length(unique(results.BG.sig$identifier))
+IT.sig <- length(unique(results.IT.sig$identifier))
+IG.sig <- length(unique(results.IG.sig$identifier))
+
+datTable <- data.frame("Tissue" = c("Bursa", "Bursa", "Ileum", "Ileum"), "Level" = c("Transcript", "Gene", "Transcript", "Gene"), "Analyzed" = c(BT.tib, BG.tib, IT.tib, IG.tib), "Significant" = c(BT.sig, BG.sig, IT.sig, IG.sig))
+
+kable(datTable) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F)
+
+```
+  
+
+## Distribution of p-values
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+results.IG.tib %>%
+  filter(result.type == "p.value") %>%
+  ggplot(aes(x = results.value)) +
+  #geom_histogram(bins = 30) +
+  geom_density(fill = "blue") +
+  ylab("Frequency") +
+  xlab("Regression p-value") +
+  theme_classic() +
+  labs(title="P-value distribution",
+       subtitle="Ileum - Gene level")
+
+results.IT.tib %>%
+  filter(result.type == "p.value") %>%
+  ggplot(aes(x = results.value)) +
+  #geom_histogram(bins = 30) +
+  geom_density(fill = "blue") +
+  ylab("Frequency") +
+  xlab("Regression p-value") +
+  theme_classic() +
+  labs(title="P-value distribution",
+       subtitle="Ileum - Transcript level")
+
+results.BG.tib %>%
+  filter(result.type == "p.value") %>%
+  ggplot(aes(x = results.value)) +
+  #geom_histogram(bins = 30) +
+  geom_density(fill = "blue") +
+  ylab("Frequency") +
+  xlab("Regression p-value") +
+  theme_classic() +
+  labs(title="P-value distribution",
+       subtitle="Bursa - Gene level")
+
+results.BT.tib %>%
+  filter(result.type == "p.value") %>%
+  ggplot(aes(x = results.value)) +
+  #geom_histogram(bins = 30) +
+  geom_density(fill = "blue") +
+  ylab("Frequency") +
+  xlab("Regression p-value") +
+  theme_classic() +
+  labs(title="P-value distribution",
+       subtitle="Bursa - Transcript level")
+```
+  
+  
+## Plotting significant results for ileum at gene level
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+for(trans in unique(results.IG.sig$identifier)) {
+  aprioriPlotting(trans, "Ileum", "gene")
+}
+```
+
+
+## Plotting significant results for ileum at transcript level
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+for(trans in unique(results.IT.sig$identifier)) {
+  aprioriPlotting(trans, "Ileum", "transcript")
+}
+```
+
+
+
+lcpm.all %>%
+    filter(levelGT == "gene",
+           identifier == "DN5485_c0_g1",
+           tissue == "Ileum") %>%
+    unite(birdLabel, bird, SSgroup.virus.sac, sep = "-") %>% 
+    ggplot(aes(x = log.virus.sac, y = lcpm)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    geom_text_repel(aes(label = birdLabel), ) +
+    ylab("Log2(Counts per million)") +
+    xlab("Log10(Viral titer + 1)") +
+    theme_classic()
+

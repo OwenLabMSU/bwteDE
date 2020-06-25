@@ -211,9 +211,10 @@ annot2 <- annot %>%
   dplyr::select(gene, SwissProt_GeneName, SwissProt_GeneFunction) %>%
   filter(SwissProt_GeneName != ".")
 
+#results.tib <- tibble(GO.ID = c("GO:0016823"))
 
 GOdb <- results.tib %>%
-  left_join(goIDs) %>%
+  left_join(goIDs)# %>%
   left_join(annot2)
 
 write.csv(GOdb, "ssgroupVirusAvg-Ileum-Gene.GOdb.csv")
@@ -270,3 +271,89 @@ GOdb <- results.tib %>%
   left_join(annot2)
 
 write.csv(GOdb, "ssgroupVirusAvg-Ileum-Trans.GOdb.csv")
+
+
+##########################################
+topGO.mappings <- readMappings("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/GOdbTrans.txt", sep = "\t", IDsep = ",")
+
+  DE.results <- dt.tib %>% filter(!!sym("MvH.I5") != 0)
+
+  all.genes <- sort(unique(as.character(rownames(dge$counts))))
+  int.genes <- DE.results$transcript
+  int.genes <- factor(as.integer(all.genes %in% int.genes))
+  names(int.genes) = all.genes
+
+  go.obj.BP <- new("topGOdata", ontology='BP',
+                   allGenes = int.genes,
+                   annot = annFUN.gene2GO,
+                   nodeSize = 5,
+                   gene2GO = topGO.mappings)
+
+  go.obj.MF <- new("topGOdata", ontology='MF',
+                   allGenes = int.genes,
+                   annot = annFUN.gene2GO,
+                   nodeSize = 5,
+                   gene2GO = topGO.mappings)
+
+  go.obj.CC <- new("topGOdata", ontology='CC',
+                   allGenes = int.genes,
+                   annot = annFUN.gene2GO,
+                   nodeSize = 5,
+                   gene2GO = topGO.mappings)
+
+  results.BP <- runTest(go.obj.BP, algorithm = "elim", statistic = "fisher")
+
+  results.tab.BP <- GenTable(object = go.obj.BP,
+                             elimFisher = results.BP,
+                             topNodes = 50) %>%
+    as_tibble() %>%
+    mutate(pVal = as.numeric(elimFisher)) %>%
+    filter(pVal < 0.01) %>%
+    mutate(Domain = "BP") %>%
+    mutate(Comparison = targetComp)
+
+  results.MF <- runTest(go.obj.MF, algorithm = "elim", statistic = "fisher")
+
+  results.tab.MF <- GenTable(object = go.obj.MF,
+                             elimFisher = results.MF,
+                             topNodes = 50) %>%
+    as_tibble() %>%
+    mutate(pVal = as.numeric(elimFisher)) %>%
+    filter(pVal < 0.01) %>%
+    mutate(Domain = "MF") #%>%
+    mutate(Comparison = targetComp)
+
+  results.CC <- runTest(go.obj.CC, algorithm = "elim", statistic = "fisher")
+
+  results.tab.CC <- GenTable(object = go.obj.CC,
+                             elimFisher = results.CC,
+                             topNodes = 50) %>%
+    as_tibble() %>%
+    mutate(pVal = as.numeric(elimFisher)) %>%
+    filter(pVal < 0.01) %>%
+    mutate(Domain = "CC") %>%
+    mutate(Comparison = targetComp)
+
+  rbind(results.tab.BP,
+        results.tab.MF,
+        results.tab.CC)
+
+
+results <- list()
+
+for(z in unique(names(dt.tib)[-1])) {
+  if (dt.tib %>%
+      filter(!!sym(z) != 0) %>%
+      nrow(.) > 0)
+    results[[length(results)+1]] <- goEnrich(z)
+}
+
+results.tib <- bind_rows(results, .id = "column_label") %>%
+  select(-column_label) %>%
+  arrange(GO.ID, Comparison)
+
+
+grep("GO:0000122", topGO.mappings, ignore.case = TRUE)
+
+showSigOfNodes(go.obj.MF, score(results.MF), firstSigNodes = 5, useInfo ='all')
+printGraph(go.obj.MF, results.MF, firstSigNodes = 5, fn.prefix = "ssgroupVirusAvg-Ileum-Trans-MF", useInfo = "all", pdfSW = TRUE)

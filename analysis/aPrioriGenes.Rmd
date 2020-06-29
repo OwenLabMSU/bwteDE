@@ -1,7 +1,7 @@
 ---
 title: "a Priori Gene Analysis"
 author: "Jared J. Homola"
-date: "5/26/2020"
+date: "6/29/2020"
 output: html_document
 ---
 These analyses examine the relationship between expression levels and viral titer for a set of genes that we hypothesize have a relationship with viral infection. The overall strategy is to:  
@@ -121,8 +121,8 @@ lcpm.trans <- lcpm.bursa.tmp %>%
   separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
-  filter(group == "I1") %>%
-  #filter(group == "I1" | group == "C1") %>%
+  #filter(group == "I1") %>%
+  filter(group == "I1" | group == "C1") %>%
   mutate(levelGT = "transcript", identifier = transcript) %>%
   select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac) %>%
   mutate(log.virus.sac = log10(virus.sac+1))
@@ -146,8 +146,8 @@ lcpm.all <- lcpm.bursa.tmp %>%
   separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
-  filter(group == "I1") %>%
-  #filter(group == "I1" | group == "C1") %>%  
+  #filter(group == "I1") %>%
+  filter(group == "I1" | group == "C1") %>%  
   mutate(levelGT = "gene", identifier = gene) %>%
   select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac) %>%
   mutate(log.virus.sac = log10(virus.sac+1)) %>%
@@ -432,19 +432,3 @@ for(trans in unique(results.IT.sig$identifier)) {
   aprioriPlotting(trans, "Ileum", "transcript")
 }
 ```
-
-
-
-lcpm.all %>%
-    filter(levelGT == "gene",
-           identifier == "DN5485_c0_g1",
-           tissue == "Ileum") %>%
-    unite(birdLabel, bird, SSgroup.virus.sac, sep = "-") %>% 
-    ggplot(aes(x = log.virus.sac, y = lcpm)) +
-    geom_point() +
-    geom_smooth(method = "lm") +
-    geom_text_repel(aes(label = birdLabel), ) +
-    ylab("Log2(Counts per million)") +
-    xlab("Log10(Viral titer + 1)") +
-    theme_classic()
-

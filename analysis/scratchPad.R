@@ -75,7 +75,7 @@ lcpm.bursa.tmp %>%
 goIDs <- read_delim("../extData/goIDs.txt", delim = "\t", col_names = c("transcript", "GO")) %>%
   separate(transcript, into = c(NA, "pt1", "pt2", "gene", NA)) %>%
   unite(gene, pt1, pt2, gene) %>%
-  filter(gene %in% dge$genes$gene_id) %>%
+  filter(gene %in% dt.tib$gene) %>%
   separate(GO, into = paste0("GO", 1:500), sep = ",") %>%
   pivot_longer(cols = starts_with("GO"),
                names_to = "GO.ID",
@@ -87,12 +87,13 @@ goIDs <- read_delim("../extData/goIDs.txt", delim = "\t", col_names = c("transcr
   mutate(GO.ID = paste0("GO", 1:length(gene))) %>%
   pivot_wider(names_from = GO.ID,
               values_from = GO,
-              values_fill = NA) %>%
-  unite("GOs", GO1:GO293, na.rm = TRUE, sep = ", ")
+              values_fill = NA) #%>%
+  #unite("GOs", GO1:GO293, na.rm = TRUE, sep = ", ")
 
 write.table(goIDs,
-            "TestGO.txt",
+            "G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/wegoGene.txt",
             row.names=FALSE,
+            na = "",
             quote=FALSE,
             col.names=FALSE,
             sep = "\t")
@@ -106,7 +107,7 @@ write.table(goIDs,
 goIDs <- read_delim("../extData/goIDs.txt", delim = "\t", col_names = c("transcript", "GO")) %>%
   separate(transcript, into = c(NA, "pt1", "pt2", "gene", "trans")) %>%
   unite(transcript, pt1, pt2, gene, trans) %>%
-  filter(transcript %in% dge$genes$transcript_id) %>%
+  filter(transcript %in% dt.tib$transcript) %>%
   separate(GO, into = paste0("GO", 1:500), sep = ",") %>%
   pivot_longer(cols = starts_with("GO"),
                names_to = "GO.ID",
@@ -117,13 +118,14 @@ goIDs <- read_delim("../extData/goIDs.txt", delim = "\t", col_names = c("transcr
   mutate(GO.ID = paste0("GO", 1:length(transcript))) %>%
   pivot_wider(names_from = GO.ID,
               values_from = GO,
-              values_fill = NA) %>%
-  unite("GOs", GO1:GO210, na.rm = TRUE, sep = ", ")
+              values_fill = NA) #%>%
+  #unite("GOs", GO1:GO210, na.rm = TRUE, sep = ", ")
 
 write.table(goIDs,
-            "G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/GOdbTrans.txt",
+            "G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/wegoTrans.txt",
             row.names=FALSE,
             quote=FALSE,
+            na = "",
             col.names=FALSE,
             sep = "\t")
 

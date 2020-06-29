@@ -1,7 +1,7 @@
 ---
 title: "a Priori Gene Analysis"
 author: "Jared J. Homola"
-date: "5/26/2020"
+date: "6/29/2020"
 output: html_document
 ---
 These analyses examine the relationship between expression levels and viral titer for a set of genes that we hypothesize have a relationship with viral infection. The overall strategy is to:  
@@ -121,10 +121,10 @@ lcpm.trans <- lcpm.bursa.tmp %>%
   separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
-  filter(group == "I1") %>%
-  #filter(group == "I1" | group == "C1") %>%
+  #filter(group == "I1") %>%
+  filter(group == "I1" | group == "C1") %>%
   mutate(levelGT = "transcript", identifier = transcript) %>%
-  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac) %>%
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac, group) %>%
   mutate(log.virus.sac = log10(virus.sac+1))
 
 
@@ -146,10 +146,10 @@ lcpm.all <- lcpm.bursa.tmp %>%
   separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
-  filter(group == "I1") %>%
-  #filter(group == "I1" | group == "C1") %>%  
+  #filter(group == "I1") %>%
+  filter(group == "I1" | group == "C1") %>%  
   mutate(levelGT = "gene", identifier = gene) %>%
-  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac) %>%
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac, group) %>%
   mutate(log.virus.sac = log10(virus.sac+1)) %>%
   bind_rows(lcpm.trans)
 
@@ -179,23 +179,11 @@ annot.all <- annot %>%
 ## Functions for analyzing and plotting data
 ```{r, message = FALSE, warning = FALSE, echo = TRUE}
 aprioriAnalysis <- function(target, targetTissue, targetLevel, ...) {
-#  result.tmp <- lcpm.all %>%
-#    filter(levelGT == targetLevel,
-#           identifier == target,
-#           tissue == targetTissue) %>%
-#    lm(lcpm ~ SSgroup.virus.sac, data = .) %>%
-#    tidy(.) %>%
-#    mutate(identifier = target) %>%
-#    filter(term == "log.virus.sac") %>%
-#    select(-term, -std.error, -statistic) %>%
-#    pivot_longer(cols = estimate:p.value,
-#                 names_to = "result.type",
-#                 values_to = "results.value")
-
   lcpm.all %>%
-    filter(levelGT == targetLevel,
-           identifier == target,
-           tissue == targetTissue) %>%
+    filter(group != "C1",
+      levelGT == targetLevel,
+      identifier == target,
+      tissue == targetTissue) %>%
     lm(lcpm ~ SSgroup.virus.sac, data = .) %>%
     glance(.) %>%
     mutate(identifier = target) %>%
@@ -206,13 +194,16 @@ aprioriAnalysis <- function(target, targetTissue, targetLevel, ...) {
 }
 
 aprioriPlotting <- function(target, targetTissue, targetLevel, ...) {
+  lcpm.all$tmpID <- ifelse(lcpm.all$group == "C1", c('Control'), c('Infected')) 
+  
   plot <- lcpm.all %>%
     filter(levelGT == targetLevel,
            identifier == target,
            tissue == targetTissue) %>%
-    mutate(SSgroup.virus.sac = fct_relevel(SSgroup.virus.sac, "LOW", "MODERATE", "HIGH")) %>%
+    mutate(SSgroup.virus.sac = fct_relevel(SSgroup.virus.sac, "CONTROL", "LOW", "MODERATE", "HIGH")) %>%
     ggplot(aes(x = SSgroup.virus.sac, y = lcpm)) +
     geom_boxplot() +
+    facet_grid(. ~ tmpID, scales = "free", space = "free") +
     ylab("Log2(Counts per million)") +
     xlab("SSgroup.virus.sac") +
     theme_classic() +

@@ -1,5 +1,5 @@
 ---
-title: "a Priori Gene Analysis - Categorical"
+title: "a Priori Gene Analysis"
 author: "Jared J. Homola"
 date: "6/29/2020"
 output: html_document
@@ -10,8 +10,8 @@ These analyses examine the relationship between expression levels and viral tite
   2. Subset our overall set of transcripts to include only those with an annotation containing the name of the candidate gene in the SwissProt gene name, SwissProt gene function, KEGG pathway, or EggNOG gene orthology annotations.  
   3. Manually filter search results to remove non-target inclusions  
   4. Remove transcripts with no variation in expression for each comparison (e.g., bursa at transcript-level)  
-  5. Perform ANOVAs for each candidate gene/transcript separate using a model of expression ~ virus shedding group + sex + weight on day 55 + age with the sequencing pool as a random effect.   
-  6. Correct the p-values for multiple testing using a false discovery rate approach with an adjusted p-values (i.e., q-value) cutoff of 0.10.  
+  5. Perform linear regressions for all candidate transcripts, recording the p-value, adjusted p-value, R2, and beta coefficient (i.e., slope or effect size) for every test.   
+  6. Correct the p-values for multiple testing using a false discovery rate approach with an adjusted p-values (i.e., q-value) cutoff of 0.05.  
   7. Plot the results  
     
 Note: These analyses include only control and infected birds sacrificed at 1 day post-infection
@@ -26,7 +26,6 @@ library(tidyverse)
 library(edgeR)
 library(broom)
 library(kableExtra)
-library(nlme)
 library(ggrepel)
 
 setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/")
@@ -182,19 +181,18 @@ annot.all <- annot %>%
 ## Functions for analyzing and plotting data
 ```{r, message = FALSE, warning = FALSE, echo = TRUE}
 aprioriAnalysis <- function(target, targetTissue, targetLevel, ...) {
-  result1 <- lcpm.all %>%
+  lcpm.all %>%
     filter(group != "C1",
       levelGT == targetLevel,
       identifier == target,
       tissue == targetTissue) %>%
-    mutate(pool = factor(pool)) %>% 
-    lme(lcpm ~ factor(SSgroup.virus.sac) + age + factor(sex) + wt_55, random = ~1|pool, data = .) %>% 
-    anova(.)
-  
-  all.result <- as_tibble(result1$`p-value`[2]) %>% 
-    mutate(comparison = target)
-
-  all.result
+    lm(lcpm ~ factor(SSgroup.virus.sac) + age + factor(sex) + wt_55, data = .) %>%
+    glance(.) %>%
+    mutate(identifier = target) %>%
+    select(r.squared, adj.r.squared, p.value, identifier) %>%
+    pivot_longer(cols = r.squared:p.value,
+                 names_to = "result.type",
+                 values_to = "results.value")
 }
 
 aprioriPlotting <- function(target, targetTissue, targetLevel, ...) {
@@ -233,17 +231,18 @@ set <- lcpm.all %>%
 results <- list()
 
 for(z in unique(set$identifier)) {
-  try({results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)}, silent = TRUE)
+  results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)
 }
 
 results.IG.tib <- bind_rows(results, .id = "column_label") %>%
   select(-column_label)
 
 results.IG.tmp <- results.IG.tib %>%
-  mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
+  filter(result.type == "p.value") %>%
+  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1)
 
-results.IG.sig <- results.IG.tib %>% filter(comparison %in% results.IG.tmp$comparison)
+results.IG.sig <- results.IG.tib %>% filter(identifier %in% results.IG.tmp$identifier)
 ```
   
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
@@ -259,17 +258,18 @@ set <- lcpm.all %>%
 results <- list()
 
 for(z in unique(set$identifier)) {
-  try({results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)}, silent = TRUE)
+  results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)
 }
 
 results.IT.tib <- bind_rows(results, .id = "column_label") %>%
   select(-column_label)
 
 results.IT.tmp <- results.IT.tib %>%
-  mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
+  filter(result.type == "p.value") %>%
+  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1)
 
-results.IT.sig <- results.IT.tib %>% filter(comparison %in% results.IT.tmp$comparison)
+results.IT.sig <- results.IT.tib %>% filter(identifier %in% results.IT.tmp$identifier)
 
 
 
@@ -285,17 +285,18 @@ set <- lcpm.all %>%
 results <- list()
 
 for(z in unique(set$identifier)) {
-  try({results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)}, silent = TRUE)
+  results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)
 }
 
 results.BT.tib <- bind_rows(results, .id = "column_label") %>%
   select(-column_label)
 
 results.BT.tmp <- results.BT.tib %>%
-  mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
+  filter(result.type == "p.value") %>%
+  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1)
 
-results.BT.sig <- results.BT.tib %>% filter(comparison %in% results.BT.tmp$comparison)
+results.BT.sig <- results.BT.tib %>% filter(identifier %in% results.BT.tmp$identifier)
 
 
 
@@ -311,31 +312,32 @@ set <- lcpm.all %>%
 results <- list()
 
 for(z in unique(set$identifier)) {
-  try({results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)}, silent = TRUE)
+  results[[length(results)+1]] <- aprioriAnalysis(z, targetTissue, targetLevel)
 }
 
 results.BG.tib <- bind_rows(results, .id = "column_label") %>%
   select(-column_label)
 
 results.BG.tmp <- results.BG.tib %>%
-  mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
+  filter(result.type == "p.value") %>%
+  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1)
 
-results.BG.sig <- results.BG.tib %>% filter(comparison %in% results.BG.tmp$comparison)
+results.BG.sig <- results.BG.tib %>% filter(identifier %in% results.BG.tmp$identifier)
 ```  
 
 
 ## Table of results
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
-BT.tib <- length(unique(results.BT.tib$comparison))
-BG.tib <- length(unique(results.BG.tib$comparison))
-IT.tib <- length(unique(results.IT.tib$comparison))
-IG.tib <- length(unique(results.IG.tib$comparison))
+BT.tib <- length(unique(results.BT.tib$identifier))
+BG.tib <- length(unique(results.BG.tib$identifier))
+IT.tib <- length(unique(results.IT.tib$identifier))
+IG.tib <- length(unique(results.IG.tib$identifier))
 
-BT.sig <- length(unique(results.BT.sig$comparison))
-BG.sig <- length(unique(results.BG.sig$comparison))
-IT.sig <- length(unique(results.IT.sig$comparison))
-IG.sig <- length(unique(results.IG.sig$comparison))
+BT.sig <- length(unique(results.BT.sig$identifier))
+BG.sig <- length(unique(results.BG.sig$identifier))
+IT.sig <- length(unique(results.IT.sig$identifier))
+IG.sig <- length(unique(results.IG.sig$identifier))
 
 datTable <- data.frame("Tissue" = c("Bursa", "Bursa", "Ileum", "Ileum"), "Level" = c("Transcript", "Gene", "Transcript", "Gene"), "Analyzed" = c(BT.tib, BG.tib, IT.tib, IG.tib), "Significant" = c(BT.sig, BG.sig, IT.sig, IG.sig))
 
@@ -348,7 +350,8 @@ kable(datTable) %>%
 ## Distribution of p-values
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
 results.IG.tib %>%
-  ggplot(aes(x = value)) +
+  filter(result.type == "p.value") %>%
+  ggplot(aes(x = results.value)) +
   #geom_histogram(bins = 30) +
   geom_density(fill = "blue") +
   ylab("Frequency") +
@@ -358,7 +361,8 @@ results.IG.tib %>%
        subtitle="Ileum - Gene level")
 
 results.IT.tib %>%
-  ggplot(aes(x = value)) +
+  filter(result.type == "p.value") %>%
+  ggplot(aes(x = results.value)) +
   #geom_histogram(bins = 30) +
   geom_density(fill = "blue") +
   ylab("Frequency") +
@@ -368,7 +372,8 @@ results.IT.tib %>%
        subtitle="Ileum - Transcript level")
 
 results.BG.tib %>%
-  ggplot(aes(x = value)) +
+  filter(result.type == "p.value") %>%
+  ggplot(aes(x = results.value)) +
   #geom_histogram(bins = 30) +
   geom_density(fill = "blue") +
   ylab("Frequency") +
@@ -378,7 +383,8 @@ results.BG.tib %>%
        subtitle="Bursa - Gene level")
 
 results.BT.tib %>%
-  ggplot(aes(x = value)) +
+  filter(result.type == "p.value") %>%
+  ggplot(aes(x = results.value)) +
   #geom_histogram(bins = 30) +
   geom_density(fill = "blue") +
   ylab("Frequency") +
@@ -391,22 +397,15 @@ results.BT.tib %>%
   
 ## Plotting significant results for ileum at gene level
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
-for(trans in unique(results.IG.sig$comparison)) {
+for(trans in unique(results.IG.sig$identifier)) {
   aprioriPlotting(trans, "Ileum", "gene")
-}
-```
-
-## Plotting significant results for bursa at gene level
-```{r, message = FALSE, warning = FALSE, echo = FALSE}
-for(trans in unique(results.BG.sig$comparison)) {
-  aprioriPlotting(trans, "Bursa", "gene")
 }
 ```
 
 
 ## Plotting significant results for ileum at transcript level
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
-for(trans in unique(results.IT.sig$comparison)) {
+for(trans in unique(results.IT.sig$identifier)) {
   aprioriPlotting(trans, "Ileum", "transcript")
 }
 ```
@@ -414,7 +413,7 @@ for(trans in unique(results.IT.sig$comparison)) {
 
 ## Plotting significant results for bursa at transcript level
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
-for(trans in unique(results.BT.sig$comparison)) {
+for(trans in unique(results.BT.sig$identifier)) {
   aprioriPlotting(trans, "Bursa", "transcript")
 }
 ```

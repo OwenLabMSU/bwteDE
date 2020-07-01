@@ -71,6 +71,26 @@ lcpm.bursa.tmp %>%
 #########################################
 ## Create database for gene level data ##
 #########################################
+##Blacklisted (virus) GO terms
+blacklist <- c(
+  "GO:0019062",
+  "GO:0019064",
+  "GO:0039694",
+  "GO:0019012",
+  "GO:0019031",
+  "GO:0020002",
+  "GO:0030430",
+  "GO:0042025",
+  "GO:0055036",
+  "GO:0003968",
+  "GO:0006370",
+  "GO:0039523",
+  "GO:0052794",
+  "GO:0052795",
+  "GO:0052796"
+)
+
+`%notin%` <- Negate(`%in%`)
 
 goIDs <- read_delim("../extData/goIDs.txt", delim = "\t", col_names = c("transcript", "GO")) %>%
   separate(transcript, into = c(NA, "pt1", "pt2", "gene", NA)) %>%
@@ -85,13 +105,14 @@ goIDs <- read_delim("../extData/goIDs.txt", delim = "\t", col_names = c("transcr
   distinct(gene, GO, .keep_all = TRUE) %>%
   group_by(gene) %>%
   mutate(GO.ID = paste0("GO", 1:length(gene))) %>%
+  filter(GO %notin% blacklist) %>%
   pivot_wider(names_from = GO.ID,
               values_from = GO,
               values_fill = NA) #%>%
   #unite("GOs", GO1:GO293, na.rm = TRUE, sep = ", ")
 
 write.table(goIDs,
-            "G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/wegoGene.txt",
+            "G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/wegoGene_Avg.txt",
             row.names=FALSE,
             na = "",
             quote=FALSE,
@@ -103,7 +124,6 @@ write.table(goIDs,
 ##########################################
 ## Create database for trans level data ##
 ##########################################
-
 goIDs <- read_delim("../extData/goIDs.txt", delim = "\t", col_names = c("transcript", "GO")) %>%
   separate(transcript, into = c(NA, "pt1", "pt2", "gene", "trans")) %>%
   unite(transcript, pt1, pt2, gene, trans) %>%
@@ -116,13 +136,15 @@ goIDs <- read_delim("../extData/goIDs.txt", delim = "\t", col_names = c("transcr
   dplyr::select(-GO.ID) %>%
   group_by(transcript) %>%
   mutate(GO.ID = paste0("GO", 1:length(transcript))) %>%
+  filter(GO %notin% blacklist) %>%
   pivot_wider(names_from = GO.ID,
               values_from = GO,
               values_fill = NA) #%>%
   #unite("GOs", GO1:GO210, na.rm = TRUE, sep = ", ")
 
+
 write.table(goIDs,
-            "G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/wegoTrans.txt",
+            "G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/wegoTrans_Avg.txt",
             row.names=FALSE,
             quote=FALSE,
             na = "",

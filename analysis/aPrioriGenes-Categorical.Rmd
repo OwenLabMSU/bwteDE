@@ -200,6 +200,12 @@ aprioriAnalysis <- function(target, targetTissue, targetLevel, ...) {
 aprioriPlotting <- function(target, targetTissue, targetLevel, ...) {
   lcpm.all$tmpID <- ifelse(lcpm.all$group == "C1", c('Control'), c('Infected')) 
   
+  annotation <- annot.all %>%
+    filter(transcript_id == target | gene_id == target) %>%
+    filter(sprot_geneName_BlastX != ".") %>%
+    select(sprot_geneName_BlastX) %>%
+    slice(1)
+  
   plot <- lcpm.all %>%
     filter(levelGT == targetLevel,
            identifier == target,
@@ -211,8 +217,9 @@ aprioriPlotting <- function(target, targetTissue, targetLevel, ...) {
     ylab("Log2(Counts per million)") +
     xlab("SSgroup.virus.sac") +
     theme_classic() +
-    labs(title=paste0(target),
+    labs(title=paste0(annotation[1], " - ", target),
          subtitle=paste0(targetTissue, " - ", targetLevel))
+  
   
   print(plot)
 }

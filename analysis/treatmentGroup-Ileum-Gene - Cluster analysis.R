@@ -154,17 +154,17 @@ heatmap.2(deGeneCounts,
           Rowv = as.dendrogram(hc),
           col = rev(morecols(50)),
           trace = "none",
-          colsep = c(9, 21, 33, 45),
+          colsep = c(5, 10),
           dendrogram = "row",
           density.info = "none",
           key = TRUE,
           #main = "Ileum - Gene level",
-          margins = c(5, 10),
+          margins = c(10, 10),
           scale ="row")
 
 library(dendextend)
 manCluster <- labels(hc) %>% as_tibble() %>%
-  mutate(manualClust = c(rep(1, 11), rep(2,32), rep(3, 4), rep(4, 6))) %>%
+  mutate(manualClust = c(rep(1, 5), rep(2,93))) %>%
   mutate(id = value)
 
 indDat <- deGeneCounts %>%
@@ -172,15 +172,15 @@ indDat <- deGeneCounts %>%
   rownames_to_column("id") %>%
   filter(id %in% manCluster$id) %>%
   left_join(manCluster) %>%
-  pivot_longer(cols = Ctl_07:I14_52,
+  pivot_longer(cols = LOW_I5_12:HIGH_I5_54,
                names_to = "sample",
                values_to = "lcpm") %>%
-  separate(sample, into = c("group", "bird")) %>%
-  mutate(group = fct_relevel(group, "Ctl", "I01", "I03", "I05", "I14")) %>%
+  separate(sample, into = c("group", NA, "bird")) %>%
+  mutate(group = fct_relevel(group, "LOW", "MODERATE", "HIGH")) %>%
   arrange(group) %>%
  # mutate(xVar = paste0(group, "-", bird),
  #        xVar = factor(xVar, levels = unique(xVar))) %>%
-  filter(manualClust == 4)
+  filter(manualClust == 1)
 
 library(ggbeeswarm)
 ggplot(indDat, aes(y = lcpm, x = group)) +
@@ -189,5 +189,12 @@ ggplot(indDat, aes(y = lcpm, x = group)) +
   ylab("Log(Counts per million)") +
   xlab("Treatment Group") +
   theme_classic(base_size = 12) +
-  theme(legend.title = element_blank(),
-        axis.text.x = element_text(angle = 90, hjust = 1))
+  theme(legend.title = element_blank())
+
+
+#### Which enriched GOs are associated?
+GOs <- read_csv("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/ssgroupVirusAvg-Ileum-Gene.GOdb.csv") %>%
+  mutate(gene = as.factor(gene))
+
+GOs %>% filter(gene %in% indDat$id) %>%
+  select(Term, GO.ID) %>% distinct(Term, GO.ID) %>% print(n = 1000)

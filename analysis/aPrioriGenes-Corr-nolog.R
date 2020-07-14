@@ -4,14 +4,14 @@
 library(tidyverse)
 library(edgeR)
 
-setwd("/mnt/research/avian/teal")
+setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript")
 
 ## Load data
-annot <- read.delim("./SRC/Trinotate.csv", header = TRUE, sep = "\t")
-cnt.trans <- read.table("./SRC/rsem.isoform.counts.matrix", header = TRUE)
-cnt.gene <- read.table("./SRC/rsem.gene.counts.matrix", header = TRUE)
-covars <- read.csv("./SRC/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
-targets <- read_delim("./SRC/aPrioriTranscripts_V2.csv", delim = ",") %>%
+annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt.trans <- read.table("./extData/rsem.isoform.counts.matrix", header = TRUE)
+cnt.gene <- read.table("./extData/rsem.gene.counts.matrix", header = TRUE)
+covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+targets <- read_delim("./extData/aPrioriTranscripts_V2.csv", delim = ",") %>%
   filter(include == "Yes" | include == "yes")
 
 ## Clean data
@@ -164,6 +164,7 @@ annot.all <- annot %>%
 
 #### Analysis function ####
 aprioriAnalysis.mean <- function(target, targetTissue, targetLevel, ...) {
+  library(tidyverse)
   datSet <- lcpm.all %>%
     filter(levelGT == targetLevel,
            identifier == target,
@@ -175,6 +176,7 @@ aprioriAnalysis.mean <- function(target, targetTissue, targetLevel, ...) {
 }
 
 aprioriAnalysis.sac <- function(target, targetTissue, targetLevel, ...) {
+  library(tidyverse)
   datSet <- lcpm.all %>%
     filter(levelGT == targetLevel,
            identifier == target,
@@ -188,6 +190,12 @@ aprioriAnalysis.sac <- function(target, targetTissue, targetLevel, ...) {
 
 
 #### Run analysis loop ####
+library(doParallel)
+
+cores=detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+registerDoParallel(cl)
+
 targetTissue <- "Ileum" ## Bursa or Ileum
 targetLevel <- "gene" ## gene or transcript
 set <- lcpm.all %>%
@@ -196,38 +204,15 @@ set <- lcpm.all %>%
   summarize(varLCPM = round(var(lcpm), 5)) %>%
   filter(varLCPM > 0)
 
-results.mean <- list()
-results.sac <- list()
-
-
-for(z in unique(set$identifier)) {
-  results.mean[[length(results.mean)+1]] <- aprioriAnalysis.mean(z, targetTissue, targetLevel)
-  results.sac[[length(results.mean)+1]] <- aprioriAnalysis.sac(z, targetTissue, targetLevel)
+finalMatrix.mean.IG <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+  tmpMatrix.IG = aprioriAnalysis.mean(z, targetTissue, targetLevel)
+  tmpMatrix.IG
 }
 
-## Process DPI1-5 mean results
-results.IG.mean.tib <- bind_rows(results.mean, .id = "column_label") %>%
-  select(-column_label) %>%
-  rename("Est" = 1, "pval" = 2) %>%
-  mutate(identifier = unique(set$identifier))
-
-results.IG.mean.tmp <- results.IG.mean.tib %>%
-  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
-
-results.IG.mean.sig <- results.IG.mean.tib %>% filter(identifier %in% results.IG.mean.tmp$identifier)
-
-## Process day of sacrifice results
-results.IG.sac.tib <- bind_rows(results.sac, .id = "column_label") %>%
-  select(-column_label) %>%
-  rename("Est" = 1, "pval" = 2) %>%
-  mutate(identifier = unique(set$identifier))
-
-results.IG.sac.tmp <- results.IG.sac.tib %>%
-  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
-
-results.IG.sac.sig <- results.IG.sac.tib %>% filter(identifier %in% results.IG.sac.tmp$identifier)
+finalMatrix.sac.IG <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+  tmpMatrix.IG = aprioriAnalysis.sac(z, targetTissue, targetLevel)
+  tmpMatrix.IG
+}
 
 
 #### Run analysis loop ####
@@ -242,34 +227,15 @@ results.mean <- list()
 results.sac <- list()
 
 
-for(z in unique(set$identifier)) {
-  results.mean[[length(results.mean)+1]] <- aprioriAnalysis.mean(z, targetTissue, targetLevel)
-  results.sac[[length(results.mean)+1]] <- aprioriAnalysis.sac(z, targetTissue, targetLevel)
+finalMatrix.mean.IT <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+  tmpMatrix.IT = aprioriAnalysis.mean(z, targetTissue, targetLevel)
+  tmpMatrix.IT
 }
 
-## Process DPI1-5 mean results
-results.IT.mean.tib <- bind_rows(results.mean, .id = "column_label") %>%
-  select(-column_label) %>%
-  rename("Est" = 1, "pval" = 2) %>%
-  mutate(identifier = unique(set$identifier))
-
-results.IT.mean.tmp <- results.IT.mean.tib %>%
-  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
-
-results.IT.mean.sig <- results.IT.mean.tib %>% filter(identifier %in% results.IT.mean.tmp$identifier)
-
-## Process day of sacrifice results
-results.IT.sac.tib <- bind_rows(results.sac, .id = "column_label") %>%
-  select(-column_label) %>%
-  rename("Est" = 1, "pval" = 2) %>%
-  mutate(identifier = unique(set$identifier))
-
-results.IT.sac.tmp <- results.IT.sac.tib %>%
-  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
-
-results.IT.sac.sig <- results.IT.sac.tib %>% filter(identifier %in% results.IT.sac.tmp$identifier)
+finalMatrix.sac.IT <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+  tmpMatrix.IT = aprioriAnalysis.sac(z, targetTissue, targetLevel)
+  tmpMatrix.IT
+}
 
 
 #### Run analysis loop ####
@@ -284,34 +250,16 @@ results.mean <- list()
 results.sac <- list()
 
 
-for(z in unique(set$identifier)) {
-  results.mean[[length(results.mean)+1]] <- aprioriAnalysis.mean(z, targetTissue, targetLevel)
-  results.sac[[length(results.mean)+1]] <- aprioriAnalysis.sac(z, targetTissue, targetLevel)
+finalMatrix.mean.BT <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+  tmpMatrix.BT = aprioriAnalysis.mean(z, targetTissue, targetLevel)
+  tmpMatrix.BT
 }
 
-## Process DPI1-5 mean results
-results.BT.mean.tib <- bind_rows(results.mean, .id = "column_label") %>%
-  select(-column_label) %>%
-  rename("Est" = 1, "pval" = 2) %>%
-  mutate(identifier = unique(set$identifier))
+finalMatrix.sac.BT <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+  tmpMatrix.BT = aprioriAnalysis.sac(z, targetTissue, targetLevel)
+  tmpMatrix.BT
+}
 
-results.BT.mean.tmp <- results.BT.mean.tib %>%
-  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
-
-results.BT.mean.sig <- results.BT.mean.tib %>% filter(identifier %in% results.BT.mean.tmp$identifier)
-
-## Process day of sacrifice results
-results.BT.sac.tib <- bind_rows(results.sac, .id = "column_label") %>%
-  select(-column_label) %>%
-  rename("Est" = 1, "pval" = 2) %>%
-  mutate(identifier = unique(set$identifier))
-
-results.BT.sac.tmp <- results.BT.sac.tib %>%
-  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
-
-results.BT.sac.sig <- results.BT.sac.tib %>% filter(identifier %in% results.BT.sac.tmp$identifier)
 
 
 #### Run analysis loop ####
@@ -325,67 +273,148 @@ set <- lcpm.all %>%
 results.mean <- list()
 results.sac <- list()
 
-
-for(z in unique(set$identifier)) {
-  results.mean[[length(results.mean)+1]] <- aprioriAnalysis.mean(z, targetTissue, targetLevel)
-  results.sac[[length(results.mean)+1]] <- aprioriAnalysis.sac(z, targetTissue, targetLevel)
+finalMatrix.mean.BG <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+  tmpMatrix.BG = aprioriAnalysis.mean(z, targetTissue, targetLevel)
+  tmpMatrix.BG
 }
 
+finalMatrix.sac.BG <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+  tmpMatrix.BG = aprioriAnalysis.sac(z, targetTissue, targetLevel)
+  tmpMatrix.BG
+}
+
+
+#stop cluster
+stopCluster(cl)
+
+
+
+
+
+
+## Recreate the "sets" for further analysis
+set.BT <- lcpm.all %>%
+  filter(levelGT == "transcript", tissue == "Bursa") %>%
+  group_by(identifier) %>%
+  summarize(varLCPM = round(var(lcpm), 5)) %>%
+  filter(varLCPM > 0)
+
+set.BG <- lcpm.all %>%
+  filter(levelGT == "gene", tissue == "Bursa") %>%
+  group_by(identifier) %>%
+  summarize(varLCPM = round(var(lcpm), 5)) %>%
+  filter(varLCPM > 0)
+
+set.IT <- lcpm.all %>%
+  filter(levelGT == "transcript", tissue == "Ileum") %>%
+  group_by(identifier) %>%
+  summarize(varLCPM = round(var(lcpm), 5)) %>%
+  filter(varLCPM > 0)
+
+set.IG <- lcpm.all %>%
+  filter(levelGT == "gene", tissue == "Ileum") %>%
+  group_by(identifier) %>%
+  summarize(varLCPM = round(var(lcpm), 5)) %>%
+  filter(varLCPM > 0)
+
+
 ## Process DPI1-5 mean results
-results.BG.mean.tib <- bind_rows(results.mean, .id = "column_label") %>%
-  select(-column_label) %>%
-  rename("Est" = 1, "pval" = 2) %>%
-  mutate(identifier = unique(set$identifier))
-
-results.BG.mean.tmp <- results.BG.mean.tib %>%
+finalMatrix.mean.BG.sig <- finalMatrix.mean.BG %>%
+  mutate(identifier = unique(set.BG$identifier)) %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
+  filter(adj.p.value < 0.1) %>%
+  mutate(comparison = "mean.BG")
 
-results.BG.mean.sig <- results.BG.mean.tib %>% filter(identifier %in% results.BG.mean.tmp$identifier)
-
-## Process day of sacrifice results
-results.BG.sac.tib <- bind_rows(results.sac, .id = "column_label") %>%
-  select(-column_label) %>%
-  rename("Est" = 1, "pval" = 2) %>%
-  mutate(identifier = unique(set$identifier))
-
-results.BG.sac.tmp <- results.BG.sac.tib %>%
+finalMatrix.mean.BT.sig <- finalMatrix.mean.BT %>%
+  mutate(identifier = unique(set.BT$identifier)) %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
+  filter(adj.p.value < 0.1) %>%
+  mutate(comparison = "mean.BT")
 
-results.BG.sac.sig <- results.BG.sac.tib %>% filter(identifier %in% results.BG.sac.tmp$identifier)
+finalMatrix.mean.IG.sig <- finalMatrix.mean.IG %>%
+  mutate(identifier = unique(set.IG$identifier)) %>%
+  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1) %>%
+  mutate(comparison = "mean.IG")
+
+finalMatrix.mean.IT.sig <- finalMatrix.mean.IT %>%
+  mutate(identifier = unique(set.IT$identifier)) %>%
+  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1) %>%
+  mutate(comparison = "mean.IT")
+
+## Process sacrifice day results
+finalMatrix.sac.BG.sig <- finalMatrix.sac.BG %>%
+  mutate(identifier = unique(set.BG$identifier)) %>%
+  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1) %>%
+  mutate(comparison = "sac.BG")
+
+finalMatrix.sac.BT.sig <- finalMatrix.sac.BT %>%
+  mutate(identifier = unique(set.BT$identifier)) %>%
+  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1) %>%
+  mutate(comparison = "sac.BT")
+
+finalMatrix.sac.IG.sig <- finalMatrix.sac.IG %>%
+  mutate(identifier = unique(set.IG$identifier)) %>%
+  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1) %>%
+  mutate(comparison = "sac.IG")
+
+finalMatrix.sac.IT.sig <- finalMatrix.sac.IT %>%
+  mutate(identifier = unique(set.IT$identifier)) %>%
+  mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
+  filter(adj.p.value < 0.1) %>%
+  mutate(comparison = "sac.IT")
 
 
 #### Bind everything up ####
-BT.tib <- length(unique(results.BT.tib$identifier))
-BG.tib <- length(unique(results.BG.tib$identifier))
-IT.tib <- length(unique(results.IT.tib$identifier))
-IG.tib <- length(unique(results.IG.tib$identifier))
+sigResults.mean <- bind_rows(finalMatrix.mean.BG.sig,
+                             finalMatrix.mean.BT.sig,
+                             finalMatrix.mean.IG.sig,
+                             finalMatrix.mean.IT.sig)
 
-BT.sig <- length(unique(results.BT.sig$identifier))
-BG.sig <- length(unique(results.BG.sig$identifier))
-IT.sig <- length(unique(results.IT.sig$identifier))
-IG.sig <- length(unique(results.IG.sig$identifier))
+sigResults.sac <- bind_rows(finalMatrix.sac.BG.sig,
+                            finalMatrix.sac.BT.sig,
+                            finalMatrix.sac.IG.sig,
+                            finalMatrix.sac.IT.sig)
 
-datTable <- data.frame("Tissue" = c("Bursa", "Bursa", "Ileum", "Ileum"), "Level" = c("Transcript", "Gene", "Transcript", "Gene"), "Analyzed" = c(BT.tib, BG.tib, IT.tib, IG.tib), "Significant" = c(BT.sig, BG.sig, IT.sig, IG.sig))
+### Clean up and save ###
+remove(
+  annot,
+  targets,
+  cnt.bursa.gene,
+  cnt.bursa.trans,
+  cnt.gene,
+  cnt.ileum.gene,
+  cnt.ileum.trans,
+  covars,
+  dge.bursa.gene,
+  dge.bursa.trans,
+  dge.ileum.gene,
+  dge.ileum.trans,
+  lcpm.bursa.gene,
+  lcpm.bursa.tmp,
+  lcpm.bursa.trans,
+  lcpm.ileum.gene,
+  lcpm.ileum.tmp,
+  lcpm.ileum.trans,
+  lcpm.trans,
+  annot.all,
+  cl,
+  cnt.trans,
+  finalMatrix,
+  finalMatrix.IG,
+  lcpm.all,
+  results.mean,
+  results.sac,
+  set,
+  set.BG,
+  set.BT,
+  set.IG,
+  set.IT,
+  tmpMatrix
+)
 
-remove(annot)
-remove(targets)
-remove(cnt.bursa.gene)
-remove(cnt.bursa.trans)
-remove(cnt.gene)
-remove(cnt.ileum.gene)
-remove(cnt.ileum.trans)
-remove(covars)
-remove(dge.bursa.gene)
-remove(dge.bursa.trans)
-remove(dge.ileum.gene)
-remove(dge.ileum.trans)
-remove(lcpm.bursa.gene)
-remove(lcpm.bursa.tmp)
-remove(lcpm.bursa.trans)
-remove(lcpm.ileum.gene)
-remove(lcpm.ileum.tmp)
-remove(lcpm.ileum.trans)
-remove(lcpm.trans)
 save.image("aPrioriGenes-Corr-nolog.Rws")

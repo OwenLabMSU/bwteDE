@@ -1,7 +1,7 @@
 ---
 title: "Candidate Gene Analysis, Correlation method"
 author: "Jared J. Homola"
-date: "7/14/2020"
+date: "7/22/2020"
 output: html_document
 ---
 
@@ -194,6 +194,24 @@ kable(results.table) %>%
 
 ```
 
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+finalMatrix.mean.BG <- finalMatrix.mean.BG %>% mutate(comparison = "mean.BG")
+finalMatrix.mean.BT <- finalMatrix.mean.BT %>% mutate(comparison = "mean.BT")
+finalMatrix.mean.IG <- finalMatrix.mean.IG %>% mutate(comparison = "mean.IG")
+finalMatrix.mean.IT <- finalMatrix.mean.IT %>% mutate(comparison = "mean.IT")
+
+finalMatrix.sac.BG <- finalMatrix.sac.BG %>% mutate(comparison = "sac.BG")
+finalMatrix.sac.BT <- finalMatrix.sac.BT %>% mutate(comparison = "sac.BT")
+finalMatrix.sac.IG <- finalMatrix.sac.IG %>% mutate(comparison = "sac.IG")
+finalMatrix.sac.IT <- finalMatrix.sac.IT %>% mutate(comparison = "sac.IT")
+
+results.all <- bind_rows(finalMatrix.sac.BG,
+                         finalMatrix.sac.BT,
+                         finalMatrix.sac.IG,
+                         finalMatrix.sac.IT)
+
+```
+
 
 ## Functions for analyzing and plotting data
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
@@ -203,6 +221,15 @@ correlationPlot.mean <- function(target, targetTissue, targetLevel, ...) {
     filter(sprot_geneName_BlastX != ".") %>%
     select(sprot_geneName_BlastX) %>%
     slice(1)
+  
+  target1 <- target
+  
+  legendData <- results.all %>% 
+    filter(target == target1) %>% 
+    separate(comparison, c("metric", "tissueLevel")) %>% 
+    mutate(tissue = if_else(tissueLevel == "BG" | tissueLevel == "BT", "Bursa", "Ileum")) %>% 
+    mutate(level = if_else(tissueLevel == "BG" | tissueLevel == "IG", "gene", "transcript")) %>% 
+    filter(tissue == targetTissue, level == targetLevel)
   
   plot <- lcpm.all %>%
     filter(levelGT == targetLevel,
@@ -214,6 +241,10 @@ correlationPlot.mean <- function(target, targetTissue, targetLevel, ...) {
     xlab("Log10(Average viral titer + 1)") +
     scale_shape_manual(values=c(13, 15:18)) +
     guides(shape = guide_legend(override.aes = list(size = 5))) +
+    scale_fill_discrete(name = "Group", labels = c(paste0("I1: ","Correlation = ", round(filter(legendData, group == "I1")$Est, 3)), 
+                                                  paste0("I3: ","Correlation = ", round(filter(legendData, group == "I3")$Est, 3)), 
+                                                  paste0("I5: ","Correlation = ", round(filter(legendData, group == "I5")$Est, 3)),
+                                                  paste0("I14: ","Correlation = ", round(filter(legendData, group == "I14")$Est, 3)))) +
     theme_classic() +
     labs(title=paste0(annotation[1], " - ", target),
          subtitle=paste0(targetTissue, " - ", targetLevel,
@@ -222,13 +253,21 @@ correlationPlot.mean <- function(target, targetTissue, targetLevel, ...) {
   print(plot)
 }
 
-
 correlationPlot.sac <- function(target, targetTissue, targetLevel, ...) {
   annotation <- annot.all %>%
     filter(transcript_id == target | gene_id == target) %>%
     filter(sprot_geneName_BlastX != ".") %>%
     select(sprot_geneName_BlastX) %>%
     slice(1)
+  
+  target1 <- target
+  
+  legendData <- results.all %>% 
+    filter(target == target1) %>% 
+    separate(comparison, c("metric", "tissueLevel")) %>% 
+    mutate(tissue = if_else(tissueLevel == "BG" | tissueLevel == "BT", "Bursa", "Ileum")) %>% 
+    mutate(level = if_else(tissueLevel == "BG" | tissueLevel == "IG", "gene", "transcript")) %>% 
+    filter(tissue == targetTissue, level == targetLevel)
   
   plot <- lcpm.all %>%
     filter(levelGT == targetLevel,
@@ -238,7 +277,20 @@ correlationPlot.sac <- function(target, targetTissue, targetLevel, ...) {
     geom_point(aes(shape = group, color = group), size = 5) +
     ylab("Log2(Counts per million)") +
     xlab("Log10(Sacrifice day viral titer + 1)") +
-    scale_shape_manual(values=c(13, 15:18)) +
+    scale_shape_manual(values=c(13, 15:18),
+                       name = "Group", 
+                       labels = c("Ctl",
+                                  paste0("I1: ","Correlation = ", round(filter(legendData, group == "I1")$Est, 3)), 
+                                  paste0("I3: ","Correlation = ", round(filter(legendData, group == "I3")$Est, 3)), 
+                                  paste0("I5: ","Correlation = ", round(filter(legendData, group == "I5")$Est, 3)),
+                                  paste0("I14: ","Correlation = ", round(filter(legendData, group == "I14")$Est, 3)))) +
+    scale_color_manual(values = c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442"),
+                       name = "Group", 
+                       labels = c("Ctl",
+                                  paste0("I1: ","Correlation = ", round(filter(legendData, group == "I1")$Est, 3)), 
+                                  paste0("I3: ","Correlation = ", round(filter(legendData, group == "I3")$Est, 3)), 
+                                  paste0("I5: ","Correlation = ", round(filter(legendData, group == "I5")$Est, 3)),
+                                  paste0("I14: ","Correlation = ", round(filter(legendData, group == "I14")$Est, 3)))) +
     guides(shape = guide_legend(override.aes = list(size = 5))) +
     theme_classic() +
     labs(title=paste0(annotation[1], " - ", target),
@@ -252,7 +304,7 @@ correlationPlot.sac <- function(target, targetTissue, targetLevel, ...) {
 
 ## Plotting significant results for sacrifice day titer
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
-for(z in 1:nrow(results.table)) {
+for(z in (1:nrow(results.table))) {
   targetInfo <- results.table %>% 
     slice(z) %>% 
     separate(comparison, c("metric", "tissueLevel")) %>% 
@@ -260,10 +312,10 @@ for(z in 1:nrow(results.table)) {
     mutate(level = if_else(tissueLevel == "BG" | tissueLevel == "IG", "gene", "transcript"))
 
   if(targetInfo$metric == "sac") {
-    correlationPlot.sac(targetInfo$identifier, targetInfo$tissue, targetInfo$level)
+    correlationPlot.sac(targetInfo$target, targetInfo$tissue, targetInfo$level)
   }
   else {
-    correlationPlot.mean(targetInfo$identifier, targetInfo$tissue, targetInfo$level)
+    correlationPlot.mean(targetInfo$target, targetInfo$tissue, targetInfo$level)
   }
 }
 ```

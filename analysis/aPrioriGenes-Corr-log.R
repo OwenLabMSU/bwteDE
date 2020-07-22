@@ -1,4 +1,4 @@
-#### aPrioriGenes-Corr HPCC ###
+#### aPrioriGenes-Corr ###
 
 ## Load packages and data
 library(tidyverse)
@@ -98,14 +98,13 @@ lcpm.trans <- lcpm.bursa.tmp %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
   mutate(levelGT = "transcript", identifier = transcript) %>%
-  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac, virus.dpi1, virus.dpi2, virus.dpi3, virus.dpi4, virus.dpi5) %>%
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, group, virus.dpi1, virus.dpi2, virus.dpi3, virus.dpi4, virus.dpi5) %>%
   mutate(log.virus.sac = log10(virus.sac+1)) %>%
   pivot_longer(cols = virus.dpi1:virus.dpi5,
                names_to = "dpi",
                values_to = "titer") %>%
-  group_by(identifier, bird, levelGT, tissue, lcpm, virus.sac, log.virus.sac, SSgroup.virus.sac) %>%
-  summarize(meanTiter1to5 = log10(mean(titer, na.rm = TRUE)+1))
-
+  group_by(identifier, bird, levelGT, tissue, lcpm, log.virus.sac, group) %>%
+  summarize(log.meanTiter1to5 = log10(mean(titer, na.rm = TRUE)))
 
 # Gene
 lcpm.bursa.tmp <- lcpm.bursa.gene %>%
@@ -126,14 +125,19 @@ lcpm.all <- lcpm.bursa.tmp %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
   mutate(levelGT = "gene", identifier = gene) %>%
-  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac, virus.dpi1, virus.dpi2, virus.dpi3, virus.dpi4, virus.dpi5) %>%
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, group, virus.dpi1, virus.dpi2, virus.dpi3, virus.dpi4, virus.dpi5) %>%
   mutate(log.virus.sac = log10(virus.sac+1)) %>%
   pivot_longer(cols = virus.dpi1:virus.dpi5,
                names_to = "dpi",
                values_to = "titer") %>%
-  group_by(identifier, bird, levelGT, tissue, lcpm, virus.sac, log.virus.sac, SSgroup.virus.sac) %>%
-  summarize(meanTiter1to5 = log10(mean(titer, na.rm = TRUE)+1)) %>%
-  bind_rows(lcpm.trans)
+  group_by(identifier, bird, levelGT, tissue, lcpm, log.virus.sac, group) %>%
+  summarize(log.meanTiter1to5 = log10(mean(titer + 1, na.rm = TRUE))) %>%
+  bind_rows(lcpm.trans) %>%
+  mutate(group = recode(group,
+                        C1 = "Ctl",
+                        C14 = "Ctl")) %>%
+  mutate(group = factor(group,
+                        levels = c("Ctl", "I1", "I3", "I5", "I14")))
 
 #### Gene query database ####
 annot.all <- annot %>%
@@ -166,10 +170,28 @@ aprioriAnalysis.mean <- function(target, targetTissue, targetLevel, ...) {
            identifier == target,
            tissue == targetTissue)
 
-  correl.mean <- cor.test(datSet$meanTiter1to5, datSet$lcpm)
+  correl.mean.all <- cor.test(datSet$log.meanTiter1to5, datSet$lcpm)
+  I1 <- datSet %>% filter(group == "I1")
+  correl.mean.I1 <- cor.test(I1$log.meanTiter1to5, I1$lcpm)
+  I3 <- datSet %>% filter(group == "I3")
+  correl.mean.I3 <- cor.test(I3$log.meanTiter1to5, I3$lcpm)
+  I5 <- datSet %>% filter(group == "I5")
+  correl.mean.I5 <- cor.test(I5$log.meanTiter1to5, I5$lcpm)
+  I14 <- datSet %>% filter(group == "I14")
+  correl.mean.I14 <- cor.test(I14$log.meanTiter1to5, I14$lcpm)
 
-  as.data.frame(cbind(correl.mean$estimate, correl.mean$p.value)) %>% as_tibble() %>% rename("Est" = 1, "pval" = 2)
+  as.data.frame(cbind(correl.mean.all$estimate, correl.mean.all$p.value)) %>%
+    as_tibble() %>%
+    bind_rows(as_tibble(cbind(correl.mean.I1$estimate, correl.mean.I1$p.value))) %>%
+    bind_rows(as_tibble(cbind(correl.mean.I3$estimate, correl.mean.I3$p.value))) %>%
+    bind_rows(as_tibble(cbind(correl.mean.I5$estimate, correl.mean.I5$p.value))) %>%
+    bind_rows(as_tibble(cbind(correl.mean.I14$estimate, correl.mean.I14$p.value))) %>%
+    rename("Est" = 1, "pval" = 2) %>%
+    mutate(target = target, group = c("all", "I1", "I3", "I5", "I14"))
+
 }
+
+
 
 aprioriAnalysis.sac <- function(target, targetTissue, targetLevel, ...) {
   library(tidyverse)
@@ -178,9 +200,24 @@ aprioriAnalysis.sac <- function(target, targetTissue, targetLevel, ...) {
            identifier == target,
            tissue == targetTissue)
 
-  correl.sac <- cor.test(datSet$log.virus.sac, datSet$lcpm)
+  correl.sac.all <- cor.test(datSet$log.virus.sac, datSet$lcpm)
+  I1 <- datSet %>% filter(group == "I1")
+  correl.sac.I1 <- cor.test(I1$log.virus.sac, I1$lcpm)
+  I3 <- datSet %>% filter(group == "I3")
+  correl.sac.I3 <- cor.test(I3$log.virus.sac, I3$lcpm)
+  I5 <- datSet %>% filter(group == "I5")
+  correl.sac.I5 <- cor.test(I5$log.virus.sac, I5$lcpm)
+  I14 <- datSet %>% filter(group == "I14")
+  correl.sac.I14 <- cor.test(I14$log.virus.sac, I14$lcpm)
 
-  as.data.frame(cbind(correl.sac$estimate, correl.sac$p.value)) %>% as_tibble() %>% rename("Est" = 1, "pval" = 2)
+  as.data.frame(cbind(correl.sac.all$estimate, correl.sac.all$p.value)) %>%
+    as_tibble() %>%
+    bind_rows(as_tibble(cbind(correl.sac.I1$estimate, correl.sac.I1$p.value))) %>%
+    bind_rows(as_tibble(cbind(correl.sac.I3$estimate, correl.sac.I3$p.value))) %>%
+    bind_rows(as_tibble(cbind(correl.sac.I5$estimate, correl.sac.I5$p.value))) %>%
+    bind_rows(as_tibble(cbind(correl.sac.I14$estimate, correl.sac.I14$p.value))) %>%
+    rename("Est" = 1, "pval" = 2) %>%
+    mutate(target = target, group = c("all", "I1", "I3", "I5", "I14"))
 }
 
 
@@ -200,12 +237,12 @@ set <- lcpm.all %>%
   summarize(varLCPM = round(var(lcpm), 5)) %>%
   filter(varLCPM > 0)
 
-finalMatrix.mean.IG <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+finalMatrix.mean.IG <- foreach(z = unique(set$identifier)[1:8], .combine = rbind) %dopar% {
   tmpMatrix.IG = aprioriAnalysis.mean(z, targetTissue, targetLevel)
   tmpMatrix.IG
 }
 
-finalMatrix.sac.IG <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
+finalMatrix.sac.IG <- foreach(z = unique(set$identifier)[1:8], .combine = rbind) %dopar% {
   tmpMatrix.IG = aprioriAnalysis.sac(z, targetTissue, targetLevel)
   tmpMatrix.IG
 }
@@ -316,50 +353,50 @@ set.IG <- lcpm.all %>%
 
 ## Process DPI1-5 mean results
 finalMatrix.mean.BG.sig <- finalMatrix.mean.BG %>%
-  mutate(identifier = unique(set.BG$identifier)) %>%
+  filter(group == "all") %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1) %>%
   mutate(comparison = "mean.BG")
 
 finalMatrix.mean.BT.sig <- finalMatrix.mean.BT %>%
-  mutate(identifier = unique(set.BT$identifier)) %>%
+  filter(group == "all") %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1) %>%
   mutate(comparison = "mean.BT")
 
 finalMatrix.mean.IG.sig <- finalMatrix.mean.IG %>%
-  mutate(identifier = unique(set.IG$identifier)) %>%
+  filter(group == "all") %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1) %>%
   mutate(comparison = "mean.IG")
 
 finalMatrix.mean.IT.sig <- finalMatrix.mean.IT %>%
-  mutate(identifier = unique(set.IT$identifier)) %>%
+  filter(group == "all") %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1) %>%
   mutate(comparison = "mean.IT")
 
 ## Process sacrifice day results
 finalMatrix.sac.BG.sig <- finalMatrix.sac.BG %>%
-  mutate(identifier = unique(set.BG$identifier)) %>%
+  filter(group == "all") %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1) %>%
   mutate(comparison = "sac.BG")
 
 finalMatrix.sac.BT.sig <- finalMatrix.sac.BT %>%
-  mutate(identifier = unique(set.BT$identifier)) %>%
+  filter(group == "all") %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1) %>%
   mutate(comparison = "sac.BT")
 
 finalMatrix.sac.IG.sig <- finalMatrix.sac.IG %>%
-  mutate(identifier = unique(set.IG$identifier)) %>%
+  filter(group == "all") %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1) %>%
   mutate(comparison = "sac.IG")
 
 finalMatrix.sac.IT.sig <- finalMatrix.sac.IT %>%
-  mutate(identifier = unique(set.IT$identifier)) %>%
+  filter(group == "all") %>%
   mutate(adj.p.value = p.adjust(pval, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.1) %>%
   mutate(comparison = "sac.IT")

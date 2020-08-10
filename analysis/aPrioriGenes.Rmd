@@ -1,7 +1,7 @@
 ---
-title: "a Priori Gene Analysis"
+title: "Candidate Gene Analysis"
 author: "Jared J. Homola"
-date: "6/29/2020"
+date: "7/29/2020"
 output: html_document
 ---
 These analyses examine the relationship between expression levels and viral titer for a set of genes that we hypothesize have a relationship with viral infection. The overall strategy is to:  
@@ -10,7 +10,7 @@ These analyses examine the relationship between expression levels and viral tite
   2. Subset our overall set of transcripts to include only those with an annotation containing the name of the candidate gene in the SwissProt gene name, SwissProt gene function, KEGG pathway, or EggNOG gene orthology annotations.  
   3. Manually filter search results to remove non-target inclusions  
   4. Remove transcripts with no variation in expression for each comparison (e.g., bursa at transcript-level)  
-  5. Perform linear regressions for all candidate transcripts, recording the p-value, adjusted p-value, R2, and beta coefficient (i.e., slope or effect size) for every test.   
+  5. Perform linear regression for each candidate gene/transcript separate using a model of expression ~ virus shedding group + sex + weight on day 55 + age with the sequencing pool as a random effect. Regressions are performed on the entire set, as well as just on groups I1, I3, I5, and I14.
   6. Correct the p-values for multiple testing using a false discovery rate approach with an adjusted p-values (i.e., q-value) cutoff of 0.05.  
   7. Plot the results  
     
@@ -121,12 +121,14 @@ lcpm.trans <- lcpm.bursa.tmp %>%
   separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
-  #filter(group == "I1") %>%
-  filter(group == "I1" | group == "C1") %>%
   mutate(levelGT = "transcript", identifier = transcript) %>%
-  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac) %>%
-  mutate(log.virus.sac = log10(virus.sac+1))
-
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, group, virus.dpi1, virus.dpi2, virus.dpi3, virus.dpi4, virus.dpi5) %>%
+  mutate(log.virus.sac = log10(virus.sac+1)) %>%
+  pivot_longer(cols = virus.dpi1:virus.dpi5,
+               names_to = "dpi",
+               values_to = "titer") %>%
+  group_by(identifier, bird, levelGT, tissue, lcpm, log.virus.sac, group) %>%
+  summarize(log.meanTiter1to5 = log10(mean(titer, na.rm = TRUE)))
 
 # Gene
 lcpm.bursa.tmp <- lcpm.bursa.gene %>%
@@ -146,12 +148,20 @@ lcpm.all <- lcpm.bursa.tmp %>%
   separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
-  #filter(group == "I1") %>%
-  filter(group == "I1" | group == "C1") %>%  
   mutate(levelGT = "gene", identifier = gene) %>%
-  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac) %>%
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, group, virus.dpi1, virus.dpi2, virus.dpi3, virus.dpi4, virus.dpi5) %>%
   mutate(log.virus.sac = log10(virus.sac+1)) %>%
-  bind_rows(lcpm.trans)
+  pivot_longer(cols = virus.dpi1:virus.dpi5,
+               names_to = "dpi",
+               values_to = "titer") %>%
+  group_by(identifier, bird, levelGT, tissue, lcpm, log.virus.sac, group) %>%
+  summarize(log.meanTiter1to5 = log10(mean(titer + 1, na.rm = TRUE))) %>%
+  bind_rows(lcpm.trans) %>%
+  mutate(group = recode(group,
+                        C1 = "Ctl",
+                        C14 = "Ctl")) %>%
+  mutate(group = factor(group,
+                        levels = c("Ctl", "I1", "I3", "I5", "I14")))
 
 #### Gene query database ####
 annot.all <- annot %>%
@@ -179,32 +189,138 @@ annot.all <- annot %>%
 ## Functions for analyzing and plotting data
 ```{r, message = FALSE, warning = FALSE, echo = TRUE}
 aprioriAnalysis <- function(target, targetTissue, targetLevel, ...) {
-  result.tmp <- lcpm.all %>%
+  filtered.dat <- lcpm.all %>%
     filter(levelGT == targetLevel,
            identifier == target,
-           tissue == targetTissue) %>%
-    lm(lcpm ~ log.virus.sac, data = .) %>%
-    tidy(.) %>%
-    mutate(identifier = target) %>%
-    filter(term == "log.virus.sac") %>%
-    select(-term, -std.error, -statistic) %>%
-    pivot_longer(cols = estimate:p.value,
-                 names_to = "result.type",
-                 values_to = "results.value")
+           tissue == targetTissue) 
+  
+  sum.overall <- filtered.dat %>% 
+    lm(lcpm ~ log.virus.sac, data = .) %>% 
+    summary()
+    
+  res.overall <- c(sum.overall$adj.r.squared, 
+    sum.overall$coefficients[2,1],
+    sum.overall$coefficients[2,4]) %>% 
+    as_tibble() %>% 
+    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
+           identifier = target,
+           results.value = value,
+           group = "all") %>% 
+    select(-value)
+    
+  sum.I1 <- filtered.dat %>% 
+    filter(group == "I1") %>% 
+    lm(lcpm ~ log.virus.sac, data = .) %>% 
+    summary()
+    
+  res.I1 <- c(sum.I1$adj.r.squared, 
+    sum.I1$coefficients[2,1],
+    sum.I1$coefficients[2,4]) %>% 
+    as_tibble() %>% 
+    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
+           identifier = target,
+           results.value = value,
+           group = "I1") %>% 
+    select(-value)
+  
+  sum.I3 <- filtered.dat %>% 
+    filter(group == "I3") %>% 
+    lm(lcpm ~ log.virus.sac, data = .) %>% 
+    summary()
+    
+  res.I3 <- c(sum.I3$adj.r.squared, 
+    sum.I3$coefficients[2,1],
+    sum.I3$coefficients[2,4]) %>% 
+    as_tibble() %>% 
+    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
+           identifier = target,
+           results.value = value,
+           group = "I3") %>% 
+    select(-value)
+  
+  sum.I5 <- filtered.dat %>% 
+    filter(group == "I5") %>% 
+    lm(lcpm ~ log.virus.sac, data = .) %>% 
+    summary()
+    
+  res.I5 <- c(sum.I5$adj.r.squared, 
+    sum.I5$coefficients[2,1],
+    sum.I5$coefficients[2,4]) %>% 
+    as_tibble() %>% 
+    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
+           identifier = target,
+           results.value = value,
+           group = "I5") %>% 
+    select(-value)
+  
+  sum.I14 <- filtered.dat %>% 
+    filter(group == "I14") %>% 
+    lm(lcpm ~ log.virus.sac, data = .) %>% 
+    summary()
+    
+  res.I14 <- c(sum.I14$adj.r.squared, 
+    sum.I14$coefficients[2,1],
+    sum.I14$coefficients[2,4]) %>% 
+    as_tibble() %>% 
+    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
+           identifier = target,
+           results.value = value,
+           group = "I14") %>% 
+    select(-value)
 
-  lcpm.all %>%
-    filter(levelGT == targetLevel,
-           identifier == target,
-           tissue == targetTissue) %>%
-    lm(lcpm ~ log.virus.sac, data = .) %>%
-    glance(.) %>%
-    mutate(identifier = target) %>%
-    select(r.squared, adj.r.squared, identifier) %>%
-    pivot_longer(cols = r.squared:adj.r.squared,
-                 names_to = "result.type",
-                 values_to = "results.value") %>%
-    rbind(result.tmp)
+  bind_rows(res.overall, res.I1, res.I3, res.I5, res.I14)
 }
+
+
+aprioriPlot <- function(target, targetTissue, targetLevel, ...) {
+  annotation <- annot.all %>%
+    filter(transcript_id == target | gene_id == target) %>%
+    filter(sprot_geneName_BlastX != ".") %>%
+    select(sprot_geneName_BlastX) %>%
+    slice(1)
+  
+  target1 <- target
+  
+  legendData <- results.all %>% 
+    filter(target == target1) %>% 
+    separate(comparison, c("metric", "tissueLevel")) %>% 
+    mutate(tissue = if_else(tissueLevel == "BG" | tissueLevel == "BT", "Bursa", "Ileum")) %>% 
+    mutate(level = if_else(tissueLevel == "BG" | tissueLevel == "IG", "gene", "transcript")) %>% 
+    filter(tissue == targetTissue, level == targetLevel)
+  
+  plot <- lcpm.all %>%
+    filter(levelGT == targetLevel,
+           tissue == targetTissue) %>% 
+    filter(identifier == target) %>% 
+    ggplot(aes(x = log.virus.sac, y = lcpm)) +
+    geom_point(aes(shape = group, color = group), size = 5) +
+    ylab("Log2(Counts per million)") +
+    xlab("Log10(Sacrifice day viral titer + 1)") +
+    scale_shape_manual(values=c(13, 15:18),
+                       name = "Group", 
+                       labels = c("Ctl",
+                                  paste0("I1: ","Correlation = ", round(filter(legendData, group == "I1")$Est, 3)), 
+                                  paste0("I3: ","Correlation = ", round(filter(legendData, group == "I3")$Est, 3)), 
+                                  paste0("I5: ","Correlation = ", round(filter(legendData, group == "I5")$Est, 3)),
+                                  paste0("I14: ","Correlation = ", round(filter(legendData, group == "I14")$Est, 3)))) +
+    scale_color_manual(values = c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442"),
+                       name = "Group", 
+                       labels = c("Ctl",
+                                  paste0("I1: ","Correlation = ", round(filter(legendData, group == "I1")$Est, 3)), 
+                                  paste0("I3: ","Correlation = ", round(filter(legendData, group == "I3")$Est, 3)), 
+                                  paste0("I5: ","Correlation = ", round(filter(legendData, group == "I5")$Est, 3)),
+                                  paste0("I14: ","Correlation = ", round(filter(legendData, group == "I14")$Est, 3)))) +
+    guides(shape = guide_legend(override.aes = list(size = 5))) +
+    theme_classic() +
+    labs(title=paste0(annotation[1], " - ", target),
+         subtitle=paste0(targetTissue, " - ", targetLevel,
+                         "; Adj. p = ", round(targetInfo$adj.p.value, 5),
+                         "; Pearson correlation coefficent = ", round(targetInfo$Est, 3)))
+  print(plot)
+}
+
+
+
 
 aprioriPlotting <- function(target, targetTissue, targetLevel, ...) {
   ifelse(targetLevel == "gene", 

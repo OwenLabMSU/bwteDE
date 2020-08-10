@@ -1,0 +1,526 @@
+---
+title: "Control vs. Infected groupings - Transcript"
+author: "Jared J. Homola"
+date: "4/19/2020"
+output: html_document
+---
+This is an analysis of differential expression at the transcript level between control and infected groupings of blue-winged teals.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+## Load packages and data
+library(limma)
+library(edgeR)
+library(Glimma)
+library(gplots)
+library(ggrepel)
+library(RColorBrewer)
+library(kableExtra)
+library(gridExtra)
+library(tidyverse)
+
+setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/")
+
+## Load data
+annot <- read.delim("./extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("./extData/rsem.isoform.counts.matrix", header = TRUE)
+covars <- read.csv("./extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+```
+
+
+### Clean data
+Bird 36 is missing a measurement for the weight covariate and bird 19 had improper tissue-based grouping, suggesting a potential sample mix up. They are both removed from the analysis. We also rename the transcripts, dropping the "Trinity_" prefix.
+```{r, warning = FALSE, message = FALSE}
+cnt.bursa <- cnt %>%
+  select(
+    -alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("transcript") %>%
+  separate(transcript, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript, pt1, pt2, gene, isoform) %>%
+  column_to_rownames("transcript") %>% 
+  select(contains("Bursa"))
+
+cnt.ileum <- cnt %>%
+  select(
+    -alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("transcript") %>%
+  separate(transcript, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript, pt1, pt2, gene, isoform) %>%
+  column_to_rownames("transcript") %>% 
+  select(contains("Ileum"))
+
+covars <- covars %>%
+  filter(!bird %in% c("36", "19")) %>%
+  arrange(bird) %>%
+  mutate(group = str_remove(group, "-"))
+
+annot <- annot %>%
+  separate(transcript_id, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript_id, pt1, pt2, gene, isoform)
+```
+
+
+### Set up model effects
+```{r, warning = FALSE, message = FALSE}
+bird <- as.factor(covars$bird)
+sex <- as.factor(covars$sex)
+age <- as.numeric(covars$age)
+weight <- covars$wt_55
+group <- as.factor(covars$group)
+pool.bursa <- as.factor(covars$Pool.Bursa)
+pool.ileum <- as.factor(covars$Pool.Ileum)
+ssgroup.virus.sac <- as.factor(covars$SSgroup.virus.sac)
+
+covars.tib <- data.frame(bird,
+                    sex,
+                    age,
+                    weight,
+                    group,
+                    pool.bursa,
+                    pool.ileum,
+                    ssgroup.virus.sac) %>% 
+  as_tibble()
+```
+
+### Prep data for analysis
+Here we standardize expression levels across samples of varying depth by using the counts per million (CPM) and trimmed mean of M-values (TMM) methods. We also remove any transcripts that are expressed at few than 0.5 CPM in at least 25% of individuals. 
+```{r, warning = FALSE, message = FALSE}
+#Convert to DGEList object
+dge.bursa <- DGEList(counts=cnt.bursa)
+dge.bursa$genes <- annot[match(rownames(dge.bursa$counts), annot$transcript_id),]
+
+#CPM and log-CPM
+cpm.bursa <- cpm(dge.bursa)
+lcpm.bursa <- cpm(dge.bursa, log = TRUE)
+
+#### Retain only transcripts expressed at >0.5 CPM in at least 25% of individuals
+table(rowSums(dge.bursa$counts==0) == length(cnt.bursa[1,])) #Any transcripts w/o expression?
+keep.exprs <- rowSums(cpm.bursa>0.5) >= length(cnt.bursa[1,])/4
+sum(keep.exprs)
+
+dge.bursa <- dge.bursa[keep.exprs,, keep.lib.sizes=FALSE]
+table(rowSums(dge.bursa$counts==0) == length(cnt.bursa[1,]))
+dim(dge.bursa)
+
+#TMM normalization
+dge.bursa <- calcNormFactors(dge.bursa, method = "TMM")
+
+#Convert to DGEList object
+dge.ileum <- DGEList(counts=cnt.ileum)
+dge.ileum$genes <- annot[match(rownames(dge.ileum$counts), annot$transcript_id),]
+
+#CPM and log-CPM
+cpm.ileum <- cpm(dge.ileum)
+lcpm.ileum <- cpm(dge.ileum, log = TRUE)
+
+#### Retain only transcript expressed at >0.5 CPM in at least 25% of individuals
+table(rowSums(dge.ileum$counts==0) == length(cnt.ileum[1,]))
+keep.exprs <- rowSums(cpm.ileum>0.5) >= length(cnt.ileum[1,])/4
+sum(keep.exprs)
+
+dge.ileum <- dge.ileum[keep.exprs,, keep.lib.sizes=FALSE]
+table(rowSums(dge.ileum$counts==0) == length(cnt.ileum[1,]))
+dim(dge.ileum)
+
+#TMM normalization
+dge.ileum <- calcNormFactors(dge.ileum, method = "TMM")
+
+```
+
+
+### Subset data
+Following normalization, we subset the data based on necessary groups.
+```{r, warning = FALSE, message = FALSE}
+#Assign groups in DGElist
+dge.bursa$samples$group <- covars.tib$group
+dge.ileum$samples$group <- covars.tib$group
+
+### Divide out day 1
+dge.bursa.1 <- dge.bursa[,grep('\\bC1\\b|\\bI1\\b', dge.bursa$samples$group)]
+dge.ileum.1 <- dge.ileum[,grep('\\bC1\\b|\\bI1\\b', dge.ileum$samples$group)]
+covars.1 <- covars.tib %>% filter(group %in% c("C1", "I1")) %>% droplevels()
+```
+
+# Differential expression analysis
+### Establish design & contrast matrices
+```{r}
+## Bursa
+design.bursa = model.matrix(~ 0 +
+                        covars.1$ssgroup.virus.sac +
+                        covars.1$age +
+                        covars.1$sex + 
+                        covars.1$weight + 
+                        covars.1$pool.bursa)
+
+colnames(design.bursa) <- c("CONTROL", "HIGH", "LOW", "MODERATE",
+                         "age", "sexM", "weight", "pool2", "pool3")
+
+contr.matrix.bursa = makeContrasts(
+  CvL = CONTROL - LOW,
+  CvM = CONTROL - MODERATE,
+  CvH = CONTROL - HIGH,
+  LvM = LOW - MODERATE,
+  LvH = LOW - HIGH,
+  MvH = MODERATE - HIGH,
+  levels = colnames(design.bursa))
+
+v.bursa <- voomWithQualityWeights(dge.bursa.1, design.bursa)
+vfit.bursa <- lmFit(v.bursa, design.bursa) 
+vfit.bursa <- contrasts.fit(vfit.bursa, contrasts = contr.matrix.bursa)
+tfit.bursa <- treat(vfit.bursa, lfc = 1.0)
+
+## Ileum
+design.ileum = model.matrix(~ 0 +
+                        covars.1$ssgroup.virus.sac +
+                        covars.1$age +
+                        covars.1$sex + 
+                        covars.1$weight + 
+                        covars.1$pool.ileum)
+
+colnames(design.ileum) <- c("CONTROL", "HIGH", "LOW", "MODERATE",
+                         "age", "sexM", "weight", "pool3")
+
+contr.matrix.ileum = makeContrasts(
+  CvL = CONTROL - LOW,
+  CvM = CONTROL - MODERATE,
+  CvH = CONTROL - HIGH,
+  LvM = LOW - MODERATE,
+  LvH = LOW - HIGH,
+  MvH = MODERATE - HIGH,
+  levels = colnames(design.ileum))
+
+v.ileum <- voomWithQualityWeights(dge.ileum.1, design.ileum)
+vfit.ileum <- lmFit(v.ileum, design.ileum) 
+vfit.ileum <- contrasts.fit(vfit.ileum, contrasts = contr.matrix.ileum)
+tfit.ileum <- treat(vfit.ileum, lfc = 1.0)
+```
+
+For a gene to be considered differentially expressed, we require a p-value of 0.1 with a false discovery rate correction and a log fold count difference of 1.
+```{r}
+dt.bursa <- decideTests(tfit.bursa, p.value = 0.1, adjust.method = "fdr")
+summary(dt.bursa) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+dt.tib.bursa <- as_tibble(dt.bursa, rownames = NA) %>% 
+  rownames_to_column("transcript") %>% 
+  mutate_at(vars(contains("v")), as.numeric) %>% 
+  rename(CvL.bursa = CvL,
+         CvM.bursa = CvM,
+         CvH.bursa = CvH,
+         LvM.bursa = LvM,
+         LvH.bursa = LvH,
+         MvH.bursa = MvH)  %>% 
+  filter_at(vars(CvL.bursa:MvH.bursa), any_vars(. != 0))
+
+dt.ileum <- decideTests(tfit.ileum, p.value = 0.1, adjust.method = "fdr")
+summary(dt.ileum) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+dt.tib.ileum <- as_tibble(dt.ileum, rownames = NA) %>% 
+  rownames_to_column("transcript") %>% 
+  mutate_at(vars(contains("v")), as.numeric) %>% 
+  rename(CvL.ileum = CvL,
+         CvM.ileum = CvM,
+         CvH.ileum = CvH,
+         LvM.ileum = LvM,
+         LvH.ileum = LvH,
+         MvH.ileum = MvH) %>% 
+  filter_at(vars(CvL.ileum:MvH.ileum), any_vars(. != 0))
+
+dt.tib <- dt.tib.bursa %>% 
+  full_join(dt.tib.ileum) %>% 
+  replace(., is.na(.), "0") %>% 
+  mutate_at(vars(contains("v")), as.numeric)
+
+```
+
+
+```{r}
+dt.tib %>% pivot_longer(cols = contains("v"),
+                              names_to = "comparison",
+                              values_to = "value") %>% 
+  mutate(value = abs(value)) %>% 
+  separate(comparison, into = c("comparison", "tissue")) %>% 
+  group_by(comparison, tissue) %>% 
+  summarize(numDE = sum(value)) %>%
+  ungroup() %>% 
+  mutate(comparison = as.factor(comparison),
+         tissue = as.factor(tissue)) %>%
+  mutate(comparison = fct_relevel(comparison, "CvL", "CvM", "CvH", "LvM", "MvH", "LvH")) %>% 
+  mutate(tissue = fct_relevel(tissue, "ileum", "bursa")) %>% 
+  ggplot(aes(fill = tissue, y = numDE, x = comparison)) + 
+  geom_bar(position="stack", stat="identity") +
+  ylab("Number DE transcripts") +
+  xlab("Comparison") +
+  theme_bw(base_size = 18)
+```
+
+
+### Volcano plot
+```{r, warning = FALSE, message = FALSE, fig.height = 10, fig.width = 10, fig.align = "center"}
+tmp1 <- topTreat(tfit.ileum, coef = 1, n = Inf)
+results1 <- mutate(tmp1, sig=ifelse(tmp1$adj.P.Val<0.1, "Sig", "Not Sig"))
+p1 <- ggplot(results1, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control v. Low Shedding - Ileum") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp2 <- topTreat(tfit.ileum, coef = 2, n = Inf)
+results2 <- mutate(tmp2, sig=ifelse(tmp2$adj.P.Val<0.1, "Sig", "Not Sig"))
+p2 <- ggplot(results2, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control v. Moderate Shedding - Ileum") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp3 <- topTreat(tfit.ileum, coef = 3, n = Inf)
+results3 <- mutate(tmp3, sig=ifelse(tmp3$adj.P.Val<0.1, "Sig", "Not Sig"))
+p3 <- ggplot(results3, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control v. High Shedding - Ileum") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp4 <- topTreat(tfit.ileum, coef = 4, n = Inf)
+results4 <- mutate(tmp4, sig=ifelse(tmp4$adj.P.Val<0.1, "Sig", "Not Sig"))
+p4 <- ggplot(results4, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Low v. Moderate Shedding - Ileum") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp5 <- topTreat(tfit.ileum, coef = 5, n = Inf)
+results5 <- mutate(tmp5, sig=ifelse(tmp5$adj.P.Val<0.1, "Sig", "Not Sig"))
+p5 <- ggplot(results5, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Low v. High Shedding - Ileum") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp6 <- topTreat(tfit.ileum, coef = 6, n = Inf)
+results6 <- mutate(tmp6, sig=ifelse(tmp6$adj.P.Val<0.1, "Sig", "Not Sig"))
+p6 <- ggplot(results6, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Moderate v. High Shedding - Ileum") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+
+tmp7 <- topTreat(tfit.bursa, coef = 1, n = Inf)
+results7 <- mutate(tmp7, sig=ifelse(tmp7$adj.P.Val<0.1, "Sig", "Not Sig"))
+p7 <- ggplot(results7, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control v. Low Shedding - Bursa") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp8 <- topTreat(tfit.bursa, coef = 2, n = Inf)
+results8 <- mutate(tmp8, sig=ifelse(tmp8$adj.P.Val<0.1, "Sig", "Not Sig"))
+p8 <- ggplot(results8, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control v. Moderate Shedding - Bursa") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp9 <- topTreat(tfit.bursa, coef = 3, n = Inf)
+results9 <- mutate(tmp9, sig=ifelse(tmp9$adj.P.Val<0.1, "Sig", "Not Sig"))
+p9 <- ggplot(results9, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control v. High Shedding - Bursa") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp10 <- topTreat(tfit.bursa, coef = 4, n = Inf)
+results10 <- mutate(tmp10, sig=ifelse(tmp10$adj.P.Val<0.1, "Sig", "Not Sig"))
+p10 <- ggplot(results10, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Low v. Moderate Shedding - Bursa") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp11 <- topTreat(tfit.bursa, coef = 5, n = Inf)
+results11 <- mutate(tmp11, sig=ifelse(tmp11$adj.P.Val<0.1, "Sig", "Not Sig"))
+p11 <- ggplot(results11, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Low v. High Shedding - Bursa") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp12 <- topTreat(tfit.bursa, coef = 6, n = Inf)
+results12 <- mutate(tmp12, sig=ifelse(tmp12$adj.P.Val<0.1, "Sig", "Not Sig"))
+p12 <- ggplot(results6, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Moderate v. High Shedding - Bursa") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+grid.arrange(p1, p2, p3,
+             p7, p8, p9,
+             p4, p6, p5,
+             p10, p12, p11, nrow = 4)
+```
+
+
+### Heatmap: Ileum
+```{r, warning = FALSE, message = FALSE, fig.height = 14, fig.width = 10, fig.align = "center"}
+deGeneCounts.ileum <- lcpm.ileum %>% 
+  as_tibble(rownames = NA) %>% 
+  rownames_to_column("transcript") %>%
+  filter(transcript %in% dt.tib.ileum$transcript) %>% 
+  column_to_rownames("transcript")
+
+newNames <- colnames(deGeneCounts.ileum) %>% 
+  as_tibble() %>% 
+  separate(value, into = c(NA, NA, "tissue", "sample", NA)) %>% 
+  mutate(group1 = group,
+    group2 = ssgroup.virus.sac) %>% 
+  unite("sample", 1:4, sep = "_")
+
+colnames(deGeneCounts.ileum) <- newNames$sample
+deGeneCounts.ileum <- deGeneCounts.ileum %>% 
+  select(matches("(*C1_|*I1_)")) %>% 
+  as.matrix()
+  
+## Set up palette
+mypalette <- brewer.pal(11,"RdYlBu")
+morecols <- colorRampPalette(mypalette)
+# Set up colour vector for celltype variable
+col.diff <- c("black", "purple", "orange", "green")[covars.1$ssgroup.virus.sac]
+
+# Plot the heatmap
+heatmap.2(deGeneCounts.ileum,
+          col = rev(morecols(50)),
+          trace = "none", 
+          main = "Group DE genes",
+          margins = c(10, 10),
+          ColSideColors = col.diff, scale ="row")
+```
+
+### Heatmap: Bursa
+```{r, warning = FALSE, message = FALSE, fig.height = 14, fig.width = 10, fig.align = "center"}
+deGeneCounts.bursa <- lcpm.bursa %>% 
+  as_tibble(rownames = NA) %>% 
+  rownames_to_column("transcript") %>%
+  filter(transcript %in% dt.tib.bursa$transcript) %>% 
+  column_to_rownames("transcript")
+
+newNames <- colnames(deGeneCounts.bursa) %>% 
+  as_tibble() %>% 
+  separate(value, into = c(NA, NA, "tissue", "sample", NA)) %>% 
+  mutate(group1 = group,
+    group2 = ssgroup.virus.sac) %>% 
+  unite("sample", 1:4, sep = "_")
+
+colnames(deGeneCounts.bursa) <- newNames$sample
+deGeneCounts.bursa <- deGeneCounts.bursa %>% 
+  select(matches("(*C1_|*I1_)")) %>% 
+  as.matrix()
+  
+## Set up palette
+mypalette <- brewer.pal(11,"RdYlBu")
+morecols <- colorRampPalette(mypalette)
+# Set up colour vector for celltype variable
+col.diff <- c("black", "purple", "orange", "green")[covars.1$ssgroup.virus.sac]
+
+# Plot the heatmap
+heatmap.2(deGeneCounts.bursa,
+          col = rev(morecols(50)),
+          trace = "none", 
+          main = "Group DE genes",
+          margins = c(10, 10),
+          ColSideColors = col.diff, scale ="row")
+```
+
+### Annotations for differentially expressed transcripts
+```{r message=FALSE, warning=FALSE}
+annot %>%
+  select(
+    transcript_id,
+    sprot_Top_BLASTX_hit
+  ) %>%
+  rename(transcript = transcript_id) %>% 
+  inner_join(dt.tib) %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
+  mutate_at(.vars = vars(CvL.bursa:MvH.ileum),
+            .funs = ~ ifelse(. == 1, "up", .)) %>% 
+  mutate_at(.vars = vars(CvL.bursa:MvH.ileum),
+            .funs = ~ ifelse(. == -1, "down", .)) %>% 
+  filter_at(vars(CvL.bursa:MvH.ileum), any_vars(. != 0)) %>% 
+  distinct(transcript, .keep_all = TRUE) %>% 
+  select(-SwissProt_GeneFunction) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+#### Gene functions
+```{r message=FALSE, warning=FALSE}
+annot %>%
+  select(
+    transcript_id,
+    sprot_Top_BLASTX_hit,
+    Kegg
+  ) %>%
+  rename(transcript = transcript_id) %>% 
+  inner_join(dt.tib) %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
+  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% 
+  mutate_at(.vars = vars(CvL.bursa:MvH.ileum),
+            .funs = ~ ifelse(. == 1, "up", .)) %>% 
+  mutate_at(.vars = vars(CvL.bursa:MvH.ileum),
+            .funs = ~ ifelse(. == -1, "down", .)) %>% 
+  filter_at(vars(CvL.bursa:MvH.ileum), any_vars(. != 0)) %>% 
+  distinct(SwissProt_GeneName, .keep_all = TRUE) %>% 
+  select(transcript, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```

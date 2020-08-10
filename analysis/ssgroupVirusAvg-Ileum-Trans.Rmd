@@ -1,7 +1,7 @@
 ---
 title: "Late stage infection - Ileum - Transcript"
 author: "Jared J. Homola"
-date: "6/16/2020"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: html_document
 ---
 This is an analysis of differential expression at the transcript level between shedding rate groupings based on average shedding rates for infected blue-winged teal ileum samples.
@@ -18,6 +18,7 @@ library(Glimma)
 library(gplots)
 library(ggrepel)
 library(RColorBrewer)
+library(clusterProfiler)
 library(gridExtra)
 library(kableExtra)
 library(topGO)
@@ -255,6 +256,44 @@ heatmap.2(deGeneCounts,
           scale ="row")
 ```
 
+
+### Boxplots for differentially expressed transcripts
+```{r message=FALSE, warning=FALSE}
+lcpm.DE <- lcpm %>%
+  as_tibble(rownames = NA) %>% 
+  rownames_to_column("identifier") %>% 
+  filter(identifier %in% dt.tib$transcript) %>%
+  pivot_longer(cols = contains("_"),
+               names_to = "sample",
+               values_to = "lcpm") %>%
+  separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
+  mutate(bird = as.integer(bird)) %>%
+  left_join(covars, by = "bird") %>%
+  filter(group == "I5") %>% 
+  select(identifier, bird, lcpm, SSgroup.virus.avg, group)
+
+
+aprioriPlotting <- function(target, ...) {
+  plot <- lcpm.DE %>%
+    filter(identifier == target) %>%
+    mutate(SSgroup.virus.avg = fct_relevel(SSgroup.virus.avg, "LOW", "MODERATE", "HIGH")) %>%
+    ggplot(aes(x = SSgroup.virus.avg, y = lcpm, fill = factor(group))) +
+    geom_boxplot() +
+    ylab("Log2(Counts per million)") +
+    xlab("Shedding Group") +
+    scale_fill_grey(start = 0.5, end = 1) +
+    theme_classic() +
+    labs(title = target) +
+    theme(legend.position = "none")
+  
+  print(plot)
+}
+
+for(trans in sort(unique(lcpm.DE$identifier))) {
+  aprioriPlotting(trans)
+}
+```
+
 ### Annotations for differentially expressed transcripts
 ```{r message=FALSE, warning=FALSE}
 annot %>%
@@ -381,5 +420,32 @@ results.tib <- bind_rows(results, .id = "column_label") %>%
   arrange(GO.ID, Comparison)
 
 kable(results.tib) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+
+### KEGG Pathway Analysis
+```{r message=FALSE, warning=FALSE}
+pathway.dat <- annot %>%
+  select(
+    transcript_id,
+    sprot_Top_BLASTX_hit,
+    Kegg) %>%
+  rename(transcript = transcript_id) %>%
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%
+  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>%
+  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>%
+  distinct(transcript, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %>%
+  select(transcript, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>%
+  distinct(transcript, .keep_all = TRUE) %>%
+  filter(grepl("KEGG:", KEGG_ID)) %>%
+  mutate(KEGG_ID = str_remove(KEGG_ID, "KEGG:"))
+
+id2gene <- pathway.dat %>% select(KEGG_ID, transcript) #TERM2GENE
+id2name <- pathway.dat %>% dplyr::select(KEGG_ID, SwissProt_GeneName) #TERM2NAME
+
+x <- enricher(dt.tib$transcript, minGSSize = 5, TERM2GENE=id2gene, TERM2NAME=id2name)
+kable(x@result[,2:6]) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```

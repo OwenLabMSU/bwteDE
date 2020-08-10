@@ -1,7 +1,7 @@
 ---
 title: "Treatment Groups - Ileum - Gene"
 author: "Jared J. Homola"
-date: "6/7/2020"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: html_document
 ---
 This is an analysis of differential expression at the gene level between treatment groups for control and infected blue-winged teal ileum samples.
@@ -21,6 +21,7 @@ library(RColorBrewer)
 library(gridExtra)
 library(kableExtra)
 library(topGO)
+library(clusterProfiler)
 library(tidyverse)
 
 ## Load data
@@ -283,6 +284,44 @@ heatmap.2(deGeneCounts,
           scale ="row")
 ```
 
+### Boxplots for differentially expressed genes
+```{r message=FALSE, warning=FALSE}
+lcpm.DE <- lcpm %>%
+  as_tibble(rownames = NA) %>% 
+  rownames_to_column("identifier") %>% 
+  filter(identifier %in% dt.tib$gene) %>%
+  pivot_longer(cols = contains("_"),
+               names_to = "sample",
+               values_to = "lcpm") %>%
+  separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
+  mutate(bird = as.integer(bird)) %>%
+  left_join(covars, by = "bird") %>%
+  select(identifier, bird, lcpm, group) %>% 
+  mutate(group = recode(group, C14 = "Control"),
+         group = recode(group, C1 = "Control"),
+         tmpID = ifelse(group == "Control", 'Control', 'Infected'))
+
+
+aprioriPlotting <- function(target, ...) {
+  plot <- lcpm.DE %>%
+    filter(identifier == target) %>%
+    mutate(group = fct_relevel(group, "Control", "I1", "I3", "I5", "I14")) %>%
+    ggplot(aes(x = group, y = lcpm)) +
+    geom_boxplot() +
+    facet_grid(. ~ tmpID, scales = "free", space = "free") +
+    ylab("Log2(Counts per million)") +
+    xlab("Treatment Group") +
+    theme_classic() +
+    labs(title= target)
+  
+  print(plot)
+}
+
+for(target in sort(unique(lcpm.DE$identifier))) {
+  aprioriPlotting(target)
+}
+```
+
 ### Annotations for differentially expressed genes
 ```{r message=FALSE, warning=FALSE}
 annot %>%
@@ -412,3 +451,29 @@ kable(results.tib) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```
 
+
+### KEGG Pathway Analysis
+```{r message=FALSE, warning=FALSE}
+pathway.dat <- annot %>%
+  select(
+    gene_id,
+    sprot_Top_BLASTX_hit,
+    Kegg) %>%
+  rename(gene = gene_id) %>%
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%
+  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>%
+  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>%
+  distinct(gene, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %>%
+  select(gene, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>%
+  distinct(gene, .keep_all = TRUE) %>%
+  filter(grepl("KEGG:", KEGG_ID)) %>%
+  mutate(KEGG_ID = str_remove(KEGG_ID, "KEGG:"))
+
+id2gene <- pathway.dat %>% select(KEGG_ID, gene) #TERM2GENE
+id2name <- pathway.dat %>% dplyr::select(KEGG_ID, SwissProt_GeneName) #TERM2NAME
+
+x <- enricher(dt.tib$gene, minGSSize = 5, TERM2GENE=id2gene, TERM2NAME=id2name)
+kable(x@result[,2:6]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```

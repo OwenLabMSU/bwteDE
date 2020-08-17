@@ -133,8 +133,11 @@ deGeneCounts <- lcpm %>%
 
 newNames1 <- colnames(deGeneCounts) %>%
   as_tibble() %>%
-  separate(value, into = c(NA, NA, NA, "sample", NA)) %>%
-  mutate(group = fct_relevel(group, "Ctl", "I01", "I03", "I05", "I14")) %>%
+  separate(value, into = c(NA, NA, NA, "bird", NA)) %>%
+  mutate(bird = as.integer(bird)) %>%
+  left_join(covars) %>%
+  select(bird, SSgroup.virus.sac) %>%
+  mutate(SSgroup.virus.sac = fct_relevel(SSgroup.virus.sac, "LOW", "MODERATE", "HIGH")) %>%
   #arrange(group) %>%
   unite("sample", 2:1, sep = "_")
 
@@ -170,24 +173,24 @@ manCluster <- labels(hc) %>% as_tibble() %>%
 indDat <- deGeneCounts %>%
   as_tibble(rownames = NA) %>%
   rownames_to_column("id") %>%
-  filter(id %in% manCluster$id) %>%
-  left_join(manCluster) %>%
-  pivot_longer(cols = LOW_I5_12:HIGH_I5_54,
+  #filter(id %in% manCluster$id) %>%
+  #left_join(manCluster) %>%
+  pivot_longer(cols = LOW_I1_15:HIGH_I3_46,
                names_to = "sample",
                values_to = "lcpm") %>%
   separate(sample, into = c("group", NA, "bird")) %>%
   mutate(group = fct_relevel(group, "LOW", "MODERATE", "HIGH")) %>%
-  arrange(group) %>%
+  arrange(group) #%>%
  # mutate(xVar = paste0(group, "-", bird),
  #        xVar = factor(xVar, levels = unique(xVar))) %>%
-  filter(manualClust == 1)
+  #filter(manualClust == 1)
 
 library(ggbeeswarm)
 ggplot(indDat, aes(y = lcpm, x = group)) +
   geom_boxplot() +
   geom_quasirandom(alpha = 0.15, dodge.width=.75, col=2) +
   ylab("Log(Counts per million)") +
-  xlab("Treatment Group") +
+  xlab("Shedding group") +
   theme_classic(base_size = 12) +
   theme(legend.title = element_blank())
 

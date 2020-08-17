@@ -373,7 +373,7 @@ summary {
 
 <h1 class="title toc-ignore">Treatment Groups - Ileum - Gene</h1>
 <h4 class="author">Jared J. Homola</h4>
-<h4 class="date">8/8/2020</h4>
+<h4 class="date">17 August, 2020</h4>
 
 </div>
 
@@ -5886,19 +5886,38 @@ CtlvI3
   distinct(gene, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %&gt;%
   select(gene, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %&gt;%
   distinct(gene, .keep_all = TRUE) %&gt;%
-  filter(grepl(&quot;KEGG:&quot;, KEGG_ID)) %&gt;%
-  mutate(KEGG_ID = str_remove(KEGG_ID, &quot;KEGG:&quot;))
+  filter(grepl(&quot;KO:&quot;, KO_ID)) %&gt;%
+  mutate(KO_ID = str_remove(KO_ID, &quot;KO:&quot;))
 
-id2gene &lt;- pathway.dat %&gt;% select(KEGG_ID, gene) #TERM2GENE
-id2name &lt;- pathway.dat %&gt;% dplyr::select(KEGG_ID, SwissProt_GeneName) #TERM2NAME
+targets &lt;- annot %&gt;%
+  select(
+    gene_id,
+    Kegg) %&gt;%
+  rename(gene = gene_id) %&gt;% 
+  inner_join(dt.tib) %&gt;% 
+  separate(Kegg, into = c(&quot;KEGG_ID&quot;, &quot;KO_ID&quot;), sep = &quot;\\`&quot;) %&gt;% 
+  distinct(gene, KEGG_ID, .keep_all = TRUE) %&gt;% 
+  na.omit(KO_ID) %&gt;% 
+  mutate(KO_ID = str_remove(KO_ID, &quot;KO:&quot;))
 
-x &lt;- enricher(dt.tib$gene, minGSSize = 5, TERM2GENE=id2gene, TERM2NAME=id2name)
-kable(x@result[,2:6]) %&gt;%
+x &lt;- enrichKEGG(targets$KO_ID,
+                organism=&quot;ko&quot;,
+                keyType=&quot;kegg&quot;,
+                pvalueCutoff = 0.1, 
+                pAdjustMethod = &quot;BH&quot;,
+                pathway.dat$KO_ID,
+                minGSSize = 5,
+                qvalueCutoff = 0.1)
+
+kable(x@result[,1:6]) %&gt;%
   kable_styling(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;, &quot;responsive&quot;))</code></pre>
 <table class="table table-striped table-hover table-condensed table-responsive" style="margin-left: auto; margin-right: auto;">
 <thead>
 <tr>
 <th style="text-align:left;">
+</th>
+<th style="text-align:left;">
+ID
 </th>
 <th style="text-align:left;">
 Description
@@ -5920,62 +5939,623 @@ p.adjust
 <tbody>
 <tr>
 <td style="text-align:left;">
-hsa:147409
+ko05164
 </td>
 <td style="text-align:left;">
-DSG4
+ko05164
 </td>
 <td style="text-align:left;">
-1/22
+Influenza A
 </td>
 <td style="text-align:left;">
-5/34409
+5/15
+</td>
+<td style="text-align:left;">
+92/4667
 </td>
 <td style="text-align:right;">
-0.0031929
+0.0000069
 </td>
 <td style="text-align:right;">
-0.0047894
+0.0001852
 </td>
 </tr>
 <tr>
 <td style="text-align:left;">
-hsa:9736
+ko05162
 </td>
 <td style="text-align:left;">
-UBP34
+ko05162
 </td>
 <td style="text-align:left;">
-1/22
+Measles
 </td>
 <td style="text-align:left;">
-5/34409
+4/15
+</td>
+<td style="text-align:left;">
+82/4667
 </td>
 <td style="text-align:right;">
-0.0031929
+0.0001043
 </td>
 <td style="text-align:right;">
-0.0047894
+0.0011311
 </td>
 </tr>
 <tr>
 <td style="text-align:left;">
-gga:419872
+ko05160
 </td>
 <td style="text-align:left;">
-MOV10
+ko05160
 </td>
 <td style="text-align:left;">
-1/22
+Hepatitis C
 </td>
 <td style="text-align:left;">
-8/34409
+4/15
+</td>
+<td style="text-align:left;">
+86/4667
 </td>
 <td style="text-align:right;">
-0.0051040
+0.0001257
 </td>
 <td style="text-align:right;">
-0.0051040
+0.0011311
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04621
+</td>
+<td style="text-align:left;">
+ko04621
+</td>
+<td style="text-align:left;">
+NOD-like receptor signaling pathway
+</td>
+<td style="text-align:left;">
+3/15
+</td>
+<td style="text-align:left;">
+95/4667
+</td>
+<td style="text-align:right;">
+0.0031131
+</td>
+<td style="text-align:right;">
+0.0210137
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04622
+</td>
+<td style="text-align:left;">
+ko04622
+</td>
+<td style="text-align:left;">
+RIG-I-like receptor signaling pathway
+</td>
+<td style="text-align:left;">
+2/15
+</td>
+<td style="text-align:left;">
+37/4667
+</td>
+<td style="text-align:right;">
+0.0060184
+</td>
+<td style="text-align:right;">
+0.0324994
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05168
+</td>
+<td style="text-align:left;">
+ko05168
+</td>
+<td style="text-align:left;">
+Herpes simplex virus 1 infection
+</td>
+<td style="text-align:left;">
+2/15
+</td>
+<td style="text-align:left;">
+96/4667
+</td>
+<td style="text-align:right;">
+0.0369459
+</td>
+<td style="text-align:right;">
+0.1662565
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05169
+</td>
+<td style="text-align:left;">
+ko05169
+</td>
+<td style="text-align:left;">
+Epstein-Barr virus infection
+</td>
+<td style="text-align:left;">
+2/15
+</td>
+<td style="text-align:left;">
+123/4667
+</td>
+<td style="text-align:right;">
+0.0578398
+</td>
+<td style="text-align:right;">
+0.2209442
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko00563
+</td>
+<td style="text-align:left;">
+ko00563
+</td>
+<td style="text-align:left;">
+Glycosylphosphatidylinositol (GPI)-anchor biosynthesis
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+24/4667
+</td>
+<td style="text-align:right;">
+0.0745294
+</td>
+<td style="text-align:right;">
+0.2209442
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04060
+</td>
+<td style="text-align:left;">
+ko04060
+</td>
+<td style="text-align:left;">
+Cytokine-cytokine receptor interaction
+</td>
+<td style="text-align:left;">
+2/15
+</td>
+<td style="text-align:left;">
+153/4667
+</td>
+<td style="text-align:right;">
+0.0848308
+</td>
+<td style="text-align:right;">
+0.2209442
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05150
+</td>
+<td style="text-align:left;">
+ko05150
+</td>
+<td style="text-align:left;">
+Staphylococcus aureus infection
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+28/4667
+</td>
+<td style="text-align:right;">
+0.0864350
+</td>
+<td style="text-align:right;">
+0.2209442
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04623
+</td>
+<td style="text-align:left;">
+ko04623
+</td>
+<td style="text-align:left;">
+Cytosolic DNA-sensing pathway
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+30/4667
+</td>
+<td style="text-align:right;">
+0.0923340
+</td>
+<td style="text-align:right;">
+0.2209442
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko00240
+</td>
+<td style="text-align:left;">
+ko00240
+</td>
+<td style="text-align:left;">
+Pyrimidine metabolism
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+32/4667
+</td>
+<td style="text-align:right;">
+0.0981974
+</td>
+<td style="text-align:right;">
+0.2209442
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04061
+</td>
+<td style="text-align:left;">
+ko04061
+</td>
+<td style="text-align:left;">
+Viral protein interaction with cytokine and cytokine receptor
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+42/4667
+</td>
+<td style="text-align:right;">
+0.1269882
+</td>
+<td style="text-align:right;">
+0.2397837
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05133
+</td>
+<td style="text-align:left;">
+ko05133
+</td>
+<td style="text-align:left;">
+Pertussis
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+43/4667
+</td>
+<td style="text-align:right;">
+0.1298196
+</td>
+<td style="text-align:right;">
+0.2397837
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05165
+</td>
+<td style="text-align:left;">
+ko05165
+</td>
+<td style="text-align:left;">
+Human papillomavirus infection
+</td>
+<td style="text-align:left;">
+2/15
+</td>
+<td style="text-align:left;">
+200/4667
+</td>
+<td style="text-align:right;">
+0.1332132
+</td>
+<td style="text-align:right;">
+0.2397837
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04620
+</td>
+<td style="text-align:left;">
+ko04620
+</td>
+<td style="text-align:left;">
+Toll-like receptor signaling pathway
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+57/4667
+</td>
+<td style="text-align:right;">
+0.1685698
+</td>
+<td style="text-align:right;">
+0.2763088
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04610
+</td>
+<td style="text-align:left;">
+ko04610
+</td>
+<td style="text-align:left;">
+Complement and coagulation cascades
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+59/4667
+</td>
+<td style="text-align:right;">
+0.1739722
+</td>
+<td style="text-align:right;">
+0.2763088
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05215
+</td>
+<td style="text-align:left;">
+ko05215
+</td>
+<td style="text-align:left;">
+Prostate cancer
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+67/4667
+</td>
+<td style="text-align:right;">
+0.1952558
+</td>
+<td style="text-align:right;">
+0.2810412
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04625
+</td>
+<td style="text-align:left;">
+ko04625
+</td>
+<td style="text-align:left;">
+C-type lectin receptor signaling pathway
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+69/4667
+</td>
+<td style="text-align:right;">
+0.2004962
+</td>
+<td style="text-align:right;">
+0.2810412
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04064
+</td>
+<td style="text-align:left;">
+ko04064
+</td>
+<td style="text-align:left;">
+NF-kappa B signaling pathway
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+73/4667
+</td>
+<td style="text-align:right;">
+0.2108814
+</td>
+<td style="text-align:right;">
+0.2810412
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04145
+</td>
+<td style="text-align:left;">
+ko04145
+</td>
+<td style="text-align:left;">
+Phagosome
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+76/4667
+</td>
+<td style="text-align:right;">
+0.2185876
+</td>
+<td style="text-align:right;">
+0.2810412
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05152
+</td>
+<td style="text-align:left;">
+ko05152
+</td>
+<td style="text-align:left;">
+Tuberculosis
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+97/4667
+</td>
+<td style="text-align:right;">
+0.2705960
+</td>
+<td style="text-align:right;">
+0.3269592
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05161
+</td>
+<td style="text-align:left;">
+ko05161
+</td>
+<td style="text-align:left;">
+Hepatitis B
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+103/4667
+</td>
+<td style="text-align:right;">
+0.2848510
+</td>
+<td style="text-align:right;">
+0.3269592
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko04062
+</td>
+<td style="text-align:left;">
+ko04062
+</td>
+<td style="text-align:left;">
+Chemokine signaling pathway
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+110/4667
+</td>
+<td style="text-align:right;">
+0.3011531
+</td>
+<td style="text-align:right;">
+0.3269592
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05203
+</td>
+<td style="text-align:left;">
+ko05203
+</td>
+<td style="text-align:left;">
+Viral carcinogenesis
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+114/4667
+</td>
+<td style="text-align:right;">
+0.3103121
+</td>
+<td style="text-align:right;">
+0.3269592
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05167
+</td>
+<td style="text-align:left;">
+ko05167
+</td>
+<td style="text-align:left;">
+Kaposi sarcoma-associated herpesvirus infection
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+116/4667
+</td>
+<td style="text-align:right;">
+0.3148496
+</td>
+<td style="text-align:right;">
+0.3269592
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ko05202
+</td>
+<td style="text-align:left;">
+ko05202
+</td>
+<td style="text-align:left;">
+Transcriptional misregulation in cancer
+</td>
+<td style="text-align:left;">
+1/15
+</td>
+<td style="text-align:left;">
+130/4667
+</td>
+<td style="text-align:right;">
+0.3458398
+</td>
+<td style="text-align:right;">
+0.3458398
 </td>
 </tr>
 </tbody>

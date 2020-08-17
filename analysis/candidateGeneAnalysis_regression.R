@@ -1,6 +1,7 @@
 ## Load packages and data
 library(tidyverse)
 library(edgeR)
+library(nlme)
 library(broom)
 library(kableExtra)
 library(ggrepel)
@@ -99,13 +100,10 @@ lcpm.trans <- lcpm.bursa.tmp %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
   mutate(levelGT = "transcript", identifier = transcript) %>%
-  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, group, virus.dpi1, virus.dpi2, virus.dpi3, virus.dpi4, virus.dpi5) %>%
-  mutate(log.virus.sac = log10(virus.sac+1)) %>%
-  pivot_longer(cols = virus.dpi1:virus.dpi5,
-               names_to = "dpi",
-               values_to = "titer") %>%
-  group_by(identifier, bird, levelGT, tissue, lcpm, log.virus.sac, group) %>%
-  summarize(log.meanTiter1to5 = log10(mean(titer, na.rm = TRUE)))
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac, group, age, sex, wt_55, Pool.Bursa, Pool.Ileum) %>%
+  mutate(pool = ifelse(tissue == "Bursa", Pool.Bursa, Pool.Ileum)) %>%
+  mutate(log.virus.sac = log10(virus.sac+1))
+
 
 # Gene
 lcpm.bursa.tmp <- lcpm.bursa.gene %>%
@@ -126,19 +124,16 @@ lcpm.all <- lcpm.bursa.tmp %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
   mutate(levelGT = "gene", identifier = gene) %>%
-  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, group, virus.dpi1, virus.dpi2, virus.dpi3, virus.dpi4, virus.dpi5) %>%
+  select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac, group, age, sex, wt_55, Pool.Bursa, Pool.Ileum) %>%
+  mutate(pool = ifelse(tissue == "Bursa", Pool.Bursa, Pool.Ileum)) %>%
   mutate(log.virus.sac = log10(virus.sac+1)) %>%
-  pivot_longer(cols = virus.dpi1:virus.dpi5,
-               names_to = "dpi",
-               values_to = "titer") %>%
-  group_by(identifier, bird, levelGT, tissue, lcpm, log.virus.sac, group) %>%
-  summarize(log.meanTiter1to5 = log10(mean(titer + 1, na.rm = TRUE))) %>%
   bind_rows(lcpm.trans) %>%
   mutate(group = recode(group,
                         C1 = "Ctl",
                         C14 = "Ctl")) %>%
   mutate(group = factor(group,
-                        levels = c("Ctl", "I1", "I3", "I5", "I14")))
+                        levels = c("Ctl", "I1", "I3", "I5", "I14"))) %>%
+  filter(group != "Ctl")
 
 #### Gene query database ####
 annot.all <- annot %>%
@@ -166,89 +161,64 @@ annot.all <- annot %>%
 ##### Analysis function ######
 candidateGeneAnalysis.Reg <- function(target, targetTissue, targetLevel, ...) {
   library(tidyverse)
+  library(nlme)
+
+  tryCatch({
   filtered.dat <- lcpm.all %>%
     filter(levelGT == targetLevel,
            identifier == target,
            tissue == targetTissue)
 
   sum.overall <- filtered.dat %>%
-    lm(lcpm ~ log.virus.sac, data = .) %>%  !!!!!!!!!!!!!!!!!!!!!!!!!!!
-    summary()
+    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
+    anova(.)
 
-  res.overall <- c(sum.overall$adj.r.squared,
-                   sum.overall$coefficients[2,1],
-                   sum.overall$coefficients[2,4]) %>%
-    as_tibble() %>%
-    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
-           identifier = target,
-           results.value = value,
-           group = "all") %>%
-    select(-value)
+  overall.result <- as_tibble(sum.overall$`p-value`[2]) %>%
+    mutate(identifier = target,
+           subset = "all")
 
   sum.I1 <- filtered.dat %>%
     filter(group == "I1") %>%
-    lm(lcpm ~ log.virus.sac, data = .) %>%
-    summary()
+    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
+    anova(.)
 
-  res.I1 <- c(sum.I1$adj.r.squared,
-              sum.I1$coefficients[2,1],
-              sum.I1$coefficients[2,4]) %>%
-    as_tibble() %>%
-    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
-           identifier = target,
-           results.value = value,
-           group = "I1") %>%
-    select(-value)
+  I1.result <- as_tibble(sum.I1$`p-value`[2]) %>%
+    mutate(identifier = target,
+           subset = "I1")
 
   sum.I3 <- filtered.dat %>%
     filter(group == "I3") %>%
-    lm(lcpm ~ log.virus.sac, data = .) %>%
-    summary()
+    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
+    anova(.)
 
-  res.I3 <- c(sum.I3$adj.r.squared,
-              sum.I3$coefficients[2,1],
-              sum.I3$coefficients[2,4]) %>%
-    as_tibble() %>%
-    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
-           identifier = target,
-           results.value = value,
-           group = "I3") %>%
-    select(-value)
+  I3.result <- as_tibble(sum.I3$`p-value`[2]) %>%
+    mutate(identifier = target,
+           subset = "I3")
+
 
   sum.I5 <- filtered.dat %>%
     filter(group == "I5") %>%
-    lm(lcpm ~ log.virus.sac, data = .) %>%
-    summary()
+    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
+    anova(.)
 
-  res.I5 <- c(sum.I5$adj.r.squared,
-              sum.I5$coefficients[2,1],
-              sum.I5$coefficients[2,4]) %>%
-    as_tibble() %>%
-    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
-           identifier = target,
-           results.value = value,
-           group = "I5") %>%
-    select(-value)
+  I5.result <- as_tibble(sum.I5$`p-value`[2]) %>%
+    mutate(identifier = target,
+           subset = "I5")
+
 
   sum.I14 <- filtered.dat %>%
     filter(group == "I14") %>%
-    lm(lcpm ~ log.virus.sac, data = .) %>%
-    summary()
+    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
+    anova(.)
 
-  res.I14 <- c(sum.I14$adj.r.squared,
-               sum.I14$coefficients[2,1],
-               sum.I14$coefficients[2,4]) %>%
-    as_tibble() %>%
-    mutate(result.type = c("adj.r.squared", "estimate", "pval"),
-           identifier = target,
-           results.value = value,
-           group = "I14") %>%
-    select(-value)
+  I14.result <- as_tibble(sum.I14$`p-value`[2]) %>%
+    mutate(identifier = target,
+           subset = "I14")
 
-  bind_rows(res.overall, res.I1, res.I3, res.I5, res.I14)
+
+  bind_rows(overall.result, I1.result, I3.result, I5.result, I14.result)
+  }, error=function(e){})
 }
-
-
 
 
 #### Run analysis loop ####
@@ -270,7 +240,8 @@ finalMatrix.IG <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% 
   tmpMatrix.IG = candidateGeneAnalysis.Reg(z, targetTissue, targetLevel)
   tmpMatrix.IG
 }
-
+finalMatrix.IG <- finalMatrix.IG %>%
+  mutate(comparison = "IG")
 
 #### Run analysis loop ####
 targetTissue <- "Ileum" ## Bursa or Ileum
@@ -283,11 +254,13 @@ set <- lcpm.all %>%
 results.mean <- list()
 results.sac <- list()
 
-
 finalMatrix.IT <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% {
   tmpMatrix.IT = candidateGeneAnalysis.Reg(z, targetTissue, targetLevel)
   tmpMatrix.IT
 }
+
+finalMatrix.IT <- finalMatrix.IT %>%
+  mutate(comparison = "IT")
 
 
 #### Run analysis loop ####
@@ -307,6 +280,8 @@ finalMatrix.BT <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% 
   tmpMatrix.BT
 }
 
+finalMatrix.BT <- finalMatrix.BT %>%
+  mutate(comparison = "BT")
 
 
 #### Run analysis loop ####
@@ -325,6 +300,8 @@ finalMatrix.BG <- foreach(z = unique(set$identifier), .combine = rbind) %dopar% 
   tmpMatrix.BG
 }
 
+finalMatrix.BG <- finalMatrix.BG %>%
+  mutate(comparison = "BG")
 
 #stop cluster
 stopCluster(cl)
@@ -333,52 +310,26 @@ stopCluster(cl)
 
 ## Identify significant patterns using the overall dataset
 finalMatrix.BG.sig <- finalMatrix.BG %>%
-  filter(group == "all", result.type == "pval") %>%
-  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
+  filter(subset == "all") %>%
+  mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.05) %>%
   mutate(comparison = "BG")
 
 finalMatrix.BT.sig <- finalMatrix.BT %>%
-  filter(group == "all", result.type == "pval") %>%
-  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
+  filter(subset == "all") %>%
+  mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.05) %>%
   mutate(comparison = "BT")
 
 finalMatrix.IG.sig <- finalMatrix.IG %>%
-  filter(group == "all", result.type == "pval") %>%
-  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
+  filter(subset == "all") %>%
+  mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.05) %>%
   mutate(comparison = "IG")
 
 finalMatrix.IT.sig <- finalMatrix.IT %>%
-  filter(group == "all", result.type == "pval") %>%
-  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.05) %>%
-  mutate(comparison = "IT")
-
-
-## Identify significant patterns using just I1
-finalMatrix.BG.I1.sig <- finalMatrix.BG %>%
-  filter(group == "I1", result.type == "pval") %>%
-  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.05) %>%
-  mutate(comparison = "BG")
-
-finalMatrix.BT.I1.sig <- finalMatrix.BT %>%
-  filter(group == "I1", result.type == "pval") %>%
-  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.05) %>%
-  mutate(comparison = "BT")
-
-finalMatrix.IG.I1.sig <- finalMatrix.IG %>%
-  filter(group == "I1", result.type == "pval") %>%
-  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.05) %>%
-  mutate(comparison = "IG")
-
-finalMatrix.IT.I1.sig <- finalMatrix.IT %>%
-  filter(group == "I1", result.type == "pval") %>%
-  mutate(adj.p.value = p.adjust(results.value, method='fdr', n = nrow(.))) %>%
+  filter(subset == "all") %>%
+  mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.05) %>%
   mutate(comparison = "IT")
 
@@ -389,38 +340,42 @@ sigResults <- bind_rows(finalMatrix.BG.sig,
                         finalMatrix.IG.sig,
                         finalMatrix.IT.sig)
 
+allResults <- bind_rows(finalMatrix.BG,
+                        finalMatrix.BT,
+                        finalMatrix.IG,
+                        finalMatrix.IT)
 
 
 ### Clean up and save ###
 remove(
   annot,
-  targets,
+  finalMatrix.BG,
+  finalMatrix.BT,
+  finalMatrix.IG,
+  finalMatrix.IT,
+  finalMatrix.BG.sig,
+  finalMatrix.BT.sig,
+  finalMatrix.IG.sig,
+  finalMatrix.IT.sig,
   cnt.bursa.gene,
   cnt.bursa.trans,
   cnt.gene,
   cnt.ileum.gene,
   cnt.ileum.trans,
-  covars,
+  cnt.trans,
   dge.bursa.gene,
   dge.bursa.trans,
   dge.ileum.gene,
   dge.ileum.trans,
   lcpm.bursa.gene,
-  lcpm.bursa.tmp,
   lcpm.bursa.trans,
+  lcpm.bursa.tmp,
   lcpm.ileum.gene,
   lcpm.ileum.tmp,
   lcpm.ileum.trans,
   lcpm.trans,
-  annot.all,
-  cl,
-  cnt.trans,
-  finalMatrix,
-  lcpm.all,
-  results.mean,
-  results.sac,
   set,
-  tmpMatrix
+  targets
 )
 
-save.image("candidateGeneAnalysis_regression.Rws")
+save.image("candidateGeneAnalysis_regression-NoCtl.Rws")

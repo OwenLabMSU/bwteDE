@@ -269,22 +269,34 @@ lcpm.DE <- lcpm %>%
   separate(sample, into = c(NA, NA, "tissue", "bird", NA)) %>%
   mutate(bird = as.integer(bird)) %>%
   left_join(covars, by = "bird") %>%
-  filter(group == "I5") %>% 
-  select(identifier, bird, lcpm, SSgroup.virus.avg, group)
+  filter(group == "C1" | group == "C14" | group == "I5") %>% 
+  select(identifier, bird, lcpm, SSgroup.virus.avg, group) %>% 
+  mutate(group = recode(group, C14 = "Control"),
+       group = recode(group, C1 = "Control"),
+       tmpID = ifelse(group == "Control", 'Control', 'Infected'))
 
 
 aprioriPlotting <- function(target, ...) {
+  annot.target <- annot %>%
+    select(
+      transcript_id,
+      sprot_Top_BLASTX_hit) %>%
+    filter(transcript_id == target) %>% 
+    separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, NA, NA), "\\^") %>% 
+    separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA))
+  
   plot <- lcpm.DE %>%
     filter(identifier == target) %>%
     mutate(SSgroup.virus.avg = fct_relevel(SSgroup.virus.avg, "LOW", "MODERATE", "HIGH")) %>%
     ggplot(aes(x = SSgroup.virus.avg, y = lcpm, fill = factor(group))) +
     geom_boxplot() +
+    facet_grid(. ~ tmpID, scales = "free", space = "free") +
     ylab("Log2(Counts per million)") +
     xlab("Shedding Group") +
-    scale_fill_grey(start = 0.5, end = 1) +
+    scale_fill_grey(start = 0.35, end = 1) +
     theme_classic() +
-    labs(title = target) +
-    theme(legend.position = "none")
+    labs(title= paste0(target, " - ", annot.target[1,2])) +
+    theme(legend.title = element_blank())
   
   print(plot)
 }
@@ -439,13 +451,29 @@ pathway.dat <- annot %>%
   distinct(transcript, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %>%
   select(transcript, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>%
   distinct(transcript, .keep_all = TRUE) %>%
-  filter(grepl("KEGG:", KEGG_ID)) %>%
-  mutate(KEGG_ID = str_remove(KEGG_ID, "KEGG:"))
+  filter(grepl("KO:", KO_ID)) %>%
+  mutate(KO_ID = str_remove(KO_ID, "KO:"))
 
-id2gene <- pathway.dat %>% select(KEGG_ID, transcript) #TERM2GENE
-id2name <- pathway.dat %>% dplyr::select(KEGG_ID, SwissProt_GeneName) #TERM2NAME
+targets <- annot %>%
+  select(
+    transcript_id,
+    Kegg) %>%
+  rename(transcript = transcript_id) %>% 
+  inner_join(dt.tib) %>% 
+  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% 
+  distinct(transcript, KEGG_ID, .keep_all = TRUE) %>% 
+  na.omit(KO_ID) %>% 
+  mutate(KO_ID = str_remove(KO_ID, "KO:"))
 
-x <- enricher(dt.tib$transcript, minGSSize = 5, TERM2GENE=id2gene, TERM2NAME=id2name)
-kable(x@result[,2:6]) %>%
+x <- enrichKEGG(targets$KO_ID,
+                organism="ko",
+                keyType="kegg",
+                pvalueCutoff = 0.1, 
+                pAdjustMethod = "BH",
+                pathway.dat$KO_ID,
+                minGSSize = 5,
+                qvalueCutoff = 0.1)
+
+kable(x@result[,1:6]) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```

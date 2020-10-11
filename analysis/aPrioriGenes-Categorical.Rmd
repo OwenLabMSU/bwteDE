@@ -11,7 +11,7 @@ These analyses examine the relationship between expression levels and viral tite
   3. Manually filter search results to remove non-target inclusions  
   4. Remove transcripts with no variation in expression for each comparison (e.g., bursa at transcript-level)  
   5. Perform ANOVAs for each candidate gene/transcript separate using a model of expression ~ virus shedding group + sex + weight on day 55 + age with the sequencing pool as a random effect.   
-  6. Correct the p-values for multiple testing using a false discovery rate approach with an adjusted p-values (i.e., q-value) cutoff of 0.10.  
+  6. Correct the p-values for multiple testing using a false discovery rate approach with an adjusted p-values (i.e., q-value) cutoff of 0.05.  
   7. Plot the results  
     
 Note: These analyses include only control and infected birds sacrificed at 1 day post-infection
@@ -248,7 +248,7 @@ results.IG.tib <- bind_rows(results, .id = "column_label") %>%
 
 results.IG.tmp <- results.IG.tib %>%
   mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
+  filter(adj.p.value < 0.05)
 
 results.IG.sig <- results.IG.tib %>% filter(comparison %in% results.IG.tmp$comparison)
 ```
@@ -274,7 +274,7 @@ results.IT.tib <- bind_rows(results, .id = "column_label") %>%
 
 results.IT.tmp <- results.IT.tib %>%
   mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
+  filter(adj.p.value < 0.05)
 
 results.IT.sig <- results.IT.tib %>% filter(comparison %in% results.IT.tmp$comparison)
 
@@ -300,7 +300,7 @@ results.BT.tib <- bind_rows(results, .id = "column_label") %>%
 
 results.BT.tmp <- results.BT.tib %>%
   mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
+  filter(adj.p.value < 0.05)
 
 results.BT.sig <- results.BT.tib %>% filter(comparison %in% results.BT.tmp$comparison)
 
@@ -326,7 +326,7 @@ results.BG.tib <- bind_rows(results, .id = "column_label") %>%
 
 results.BG.tmp <- results.BG.tib %>%
   mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
-  filter(adj.p.value < 0.1)
+  filter(adj.p.value < 0.05)
 
 results.BG.sig <- results.BG.tib %>% filter(comparison %in% results.BG.tmp$comparison)
 ```  

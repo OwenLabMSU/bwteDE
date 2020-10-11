@@ -209,7 +209,7 @@ grid.arrange(p1, p2, p3, nrow = 1)
 ```
 
 ### Heatmap
-```{r, warning = FALSE, message = FALSE, fig.height = 7, fig.width = 10, fig.align = "center"}
+```{r, warning = FALSE, message = FALSE, fig.height = 20, fig.width = 10, fig.align = "center"}
 # Get the gene names for DE genes
 lcpm2 <- as_tibble(dge.I5$counts) %>% 
   cpm(., log = TRUE)
@@ -228,10 +228,25 @@ colOrder <- bind_cols(covars.I5) %>%
 colnames(lcpm2) <- newNames$newNames
 lcpm2 <- lcpm2[, colOrder$newNames]
 
+heatmap.annot <- annot %>%
+  select(
+    gene_id,
+    sprot_Top_BLASTX_hit) %>% 
+  filter(gene_id %in% dt.tib$gene) %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
+  distinct(gene_id, SwissProt_GeneName) %>% 
+  filter(SwissProt_GeneName != ".")
+
 deGeneCounts <- lcpm2 %>% 
   as_tibble() %>% 
   mutate(gene = rownames(dge$counts)) %>% 
-  filter(gene %in% dt.tib$gene) %>% 
+  filter(gene %in% dt.tib$gene) %>%
+  rename(gene_id = gene) %>% 
+  left_join(heatmap.annot) %>% 
+  mutate(SwissProt_GeneName = replace_na(SwissProt_GeneName, ".")) %>% 
+  unite(gene, gene_id:SwissProt_GeneName, sep = " - ") %>% 
   column_to_rownames("gene") %>% 
   as.matrix()
 
@@ -350,7 +365,6 @@ annot %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```
 
-
 ### Gene Ontology Enrichment Analysis
 ```{r message=FALSE, warning=FALSE}
 topGO.mappings <- readMappings("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/GOdbGene.txt", sep = "\t", IDsep = ",")
@@ -409,7 +423,7 @@ goEnrich <- function(targetComp, ...) {
                           elimFisher = results.CC, 
                           topNodes = 50) %>% 
     as_tibble() %>% 
-    mutate(pVal = as.numeric(elimFisher)) %>% 
+    mutate(pVal = as.numeric(elimFisher)) %>%
     filter(pVal < 0.01) %>% 
     mutate(Domain = "CC") %>% 
     mutate(Comparison = targetComp)
@@ -435,47 +449,3 @@ results.tib <- bind_rows(results, .id = "column_label") %>%
 kable(results.tib) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```
-
-
-### KEGG Pathway Analysis
-```{r message=FALSE, warning=FALSE}
-pathway.dat <- annot %>%
-  select(
-    gene_id,
-    sprot_Top_BLASTX_hit,
-    Kegg) %>%
-  rename(gene = gene_id) %>%
-  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%
-  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%
-  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>%
-  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>%
-  distinct(gene, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %>%
-  select(gene, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>%
-  distinct(gene, .keep_all = TRUE) %>%
-  filter(grepl("KO:", KO_ID)) %>%
-  mutate(KO_ID = str_remove(KO_ID, "KO:"))
-
-targets <- annot %>%
-  select(
-    gene_id,
-    Kegg) %>%
-  rename(gene = gene_id) %>% 
-  inner_join(dt.tib) %>% 
-  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% 
-  distinct(gene, KEGG_ID, .keep_all = TRUE) %>% 
-  na.omit(KO_ID) %>% 
-  mutate(KO_ID = str_remove(KO_ID, "KO:"))
-
-x <- enrichKEGG(targets$KO_ID,
-                organism="ko",
-                keyType="kegg",
-                pvalueCutoff = 0.1, 
-                pAdjustMethod = "BH",
-                pathway.dat$KO_ID,
-                minGSSize = 5,
-                qvalueCutoff = 0.1)
-
-kable(x@result[,1:6]) %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
-```
-

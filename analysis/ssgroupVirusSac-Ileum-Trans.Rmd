@@ -288,7 +288,7 @@ grid.arrange(p1, p2, p3, p4, p5, p6, nrow = 2)
 
 
 ### Heatmap
-```{r, warning = FALSE, message = FALSE, fig.height = 7, fig.width = 10, fig.align = "center"}
+```{r, warning = FALSE, message = FALSE, fig.height = 12, fig.width = 10, fig.align = "center"}
 # Get the transcript names for DE transcripts
 # Get the gene names for DE genes
 lcpm2 <- as_tibble(dge.I1$counts) %>% 
@@ -309,12 +309,26 @@ colOrder <- bind_cols(bind_rows(covars.I1, covars.I3)) %>%
 colnames(lcpm2) <- newNames$newNames
 lcpm2 <- lcpm2[, colOrder$newNames]
 
+annotList <- annot %>%
+  select(
+    transcript_id,
+    sprot_Top_BLASTX_hit
+  ) %>%
+  filter(transcript_id %in% dt.tib$transcript) %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, NA, NA), "\\^") %>% 
+  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
+  rename(transcript = transcript_id)
+
 deGeneCounts <- lcpm2 %>% 
   as_tibble() %>% 
   mutate(transcript = rownames(dge.I1$counts)) %>% 
   filter(transcript %in% dt.tib$transcript) %>% 
-  column_to_rownames("transcript") %>% 
+  left_join(annotList) %>% 
+  unite("label", transcript:SwissProt_GeneName, sep = " - ") %>% 
+  distinct(label, .keep_all = TRUE) %>% 
+  column_to_rownames("label") %>% 
   as.matrix()
+  
 
 ## Set up palette
 mypalette <- brewer.pal(11,"RdYlBu")
@@ -363,17 +377,20 @@ aprioriPlotting <- function(target, ...) {
       sprot_Top_BLASTX_hit) %>%
     filter(transcript_id == target) %>% 
     separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, NA, NA), "\\^") %>% 
-    separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA))
+    separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
+    slice(1)
   
   plot <- lcpm.DE %>%
     filter(identifier == target) %>%
     mutate(SSgroup.virus.sac = fct_relevel(SSgroup.virus.sac, "LOW", "MODERATE", "HIGH")) %>%
     ggplot(aes(x = SSgroup.virus.sac, y = lcpm, fill = factor(group))) +
-    geom_boxplot() +
     facet_grid(. ~ tmpID, scales = "free", space = "free") +
     ylab("Log2(Counts per million)") +
     xlab("Shedding Group") +
-    scale_fill_grey(start = 0.35, end = 1) +
+    scale_fill_grey(start = 0.35, end = 1) + 
+    geom_point(position = position_dodge(width=0.75), aes(group = group), show.legend = FALSE) +
+    geom_boxplot(alpha = 0.5) +
+    geom_label_repel(aes(label = bird, group = group, fill = NULL), position = position_dodge(width=0.75), show.legend=FALSE) +
     theme_classic() +
     labs(title= paste0(target, " - ", annot.target[1,2])) +
     theme(legend.title = element_blank())
@@ -512,48 +529,5 @@ results.tib <- bind_rows(results, .id = "column_label") %>%
   arrange(GO.ID, Comparison)
 
 kable(results.tib) %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
-```
-
-
-### KEGG Pathway Analysis
-```{r message=FALSE, warning=FALSE}
-pathway.dat <- annot %>%
-  select(
-    transcript_id,
-    sprot_Top_BLASTX_hit,
-    Kegg) %>%
-  rename(trans = transcript_id) %>%
-  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%
-  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%
-  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>%
-  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>%
-  distinct(trans, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %>%
-  select(trans, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>%
-  distinct(trans, .keep_all = TRUE) %>%
-  filter(grepl("KO:", KO_ID)) %>%
-  mutate(KO_ID = str_remove(KO_ID, "KO:"))
-
-targets <- annot %>%
-  select(
-    transcript_id,
-    Kegg) %>%
-  rename(transcript = transcript_id) %>% 
-  inner_join(dt.tib) %>% 
-  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% 
-  distinct(transcript, KEGG_ID, .keep_all = TRUE) %>% 
-  na.omit(KO_ID) %>% 
-  mutate(KO_ID = str_remove(KO_ID, "KO:"))
-
-x <- enrichKEGG(targets$KO_ID,
-                organism="ko",
-                keyType="kegg",
-                pvalueCutoff = 0.1, 
-                pAdjustMethod = "BH",
-                pathway.dat$KO_ID,
-                minGSSize = 5,
-                qvalueCutoff = 0.1)
-
-kable(x@result[,1:6]) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```

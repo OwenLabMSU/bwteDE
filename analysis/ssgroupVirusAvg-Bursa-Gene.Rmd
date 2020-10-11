@@ -250,8 +250,6 @@ annot %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```
 
-
-
 ### Gene Ontology Enrichment Analysis
 ```{r message=FALSE, warning=FALSE}
 topGO.mappings <- readMappings("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/GOdbGene.txt", sep = "\t", IDsep = ",")

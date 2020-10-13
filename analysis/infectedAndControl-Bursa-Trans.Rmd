@@ -1,0 +1,240 @@
+---
+title: "LPAIV-infected and uninfected control groups - Bursa - Transcript"
+author: "Jared J. Homola"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+This is an analysis of differential expression at the transcript level between treatment groups for control and infected blue-winged teal bursa samples.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+## Load packages and data
+library(limma)
+library(edgeR)
+library(Glimma)
+library(gplots)
+library(ggrepel)
+library(RColorBrewer)
+library(gridExtra)
+library(kableExtra)
+library(topGO)
+library(tidyverse)
+
+## Load data
+annot <- read.delim("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/Trinotate.csv", header = TRUE, sep = "\t")
+cnt <- read.table("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/rsem.isoform.counts.matrix", header = TRUE)
+covars <- read.csv("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/extData/BWTE54_SSgroup_Raw_Pool.csv", header = TRUE)
+```
+
+
+### Clean data
+Bird 36 is missing a measurement for the weight covariate and bird 19 had improper tissue-based grouping, suggesting a potential sample mix up. They are both removed from the analysis. We also rename the transcripts, dropping the "Trinity_" prefix.
+```{r, warning = FALSE, message = FALSE}
+cnt <- cnt %>%
+  select(
+    -alignEstimateAbundance_BWTE_Ileum_36_S50,
+    -alignEstimateAbundance_BWTE_Bursa_36_S31,-alignEstimateAbundance_BWTE_Ileum_19_S35,
+    -alignEstimateAbundance_BWTE_Bursa_19_S14) %>%
+  rownames_to_column("transcript") %>%
+  separate(transcript, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript, pt1, pt2, gene, isoform) %>%
+  column_to_rownames("transcript") %>% 
+  select(contains("Bursa"))
+
+covars <- covars %>%
+  filter(!bird %in% c("36", "19")) %>%
+  arrange(bird) %>%
+  mutate(group = str_remove(group, "-"))
+
+annot <- annot %>%
+  separate(transcript_id, into = c(NA, "pt1", "pt2", "gene", "isoform")) %>%
+  unite(transcript_id, pt1, pt2, gene, isoform)
+
+```
+
+### Set up model effects
+```{r, warning = FALSE, message = FALSE}
+bird <- as.factor(covars$bird)
+sex <- as.factor(covars$sex)
+age <- as.numeric(covars$age)
+weight <- covars$wt_55
+group <- recode(covars$group, C1 = "Ctl", C14 = "Ctl") %>% 
+  as.factor()
+pool <- as.factor(covars$Pool.Bursa)
+```
+
+### Prep data for analysis
+Here we standardize expression levels across samples of varying depth by using the counts per million (CPM) and trimmed mean of M-values (TMM) methods. We also remove any transcripts that are expressed at few than 0.5 CPM in at least 25% of individuals.
+```{r, warning = FALSE, message = FALSE}
+#Convert to DGEList object
+dge <- DGEList(counts=cnt)
+dge$genes <- annot[match(rownames(dge$counts), annot$transcript_id),]
+
+#CPM and log-CPM
+cpm <- cpm(dge)
+lcpm <- cpm(dge, log = TRUE)
+
+#### Retain only transcripts expressed at >0.5 CPM in at least 25% of individuals
+table(rowSums(dge$counts==0) == length(cnt[1,]))
+keep.exprs <- rowSums(cpm>0.5) >= length(cnt[1,])/4
+sum(keep.exprs)
+
+dge <- dge[keep.exprs,, keep.lib.sizes=FALSE]
+table(rowSums(dge$counts==0) == length(cnt[1,]))
+dim(dge)
+
+#TMM normalization
+dge <- calcNormFactors(dge, method = "TMM")
+```
+
+### Plot MDS
+Multidimensional scaling (MDS) plots are an ordination technique that lets us examine sample clustering based on overall gene expression levels.
+```{r}
+col.group = as.numeric(as.factor(paste0(group)))
+plotMDS(lcpm, labels = paste0(bird, "_", group), col = col.group, cex = 0.75)
+title(main="Treatment group")
+```
+
+# Differential expression analysis
+### Establish design & contrast matrices
+```{r}
+## Establish design matrix
+design = model.matrix(~ 0 +
+                        group +
+                        age +
+                        sex + 
+                        weight + 
+                        pool)
+
+colnames(design) <- gsub("group", "", colnames(design))
+
+contr.matrix = makeContrasts(
+  CtlvI1 = Ctl - I1,
+  CtlvI3 = Ctl - I3,
+  CtlvI5 = Ctl - I5,
+  CtlvI14 = Ctl - I14,
+  I1vI3 = I1 - I3,
+  I3vI5 = I3 - I5,
+  I5vI14 = I5 - I14,
+  levels = colnames(design))
+```
+
+### Mean-variance trend and sample weight plots
+```{r}
+v <- voomWithQualityWeights(dge, design, plot = TRUE)
+```
+
+### Fitting the model
+```{r}
+vfit <- lmFit(v, design) 
+vfit <- contrasts.fit(vfit, contrasts = contr.matrix)
+tfit <- treat(vfit, lfc = 1.0)
+plotSA(tfit)
+```
+
+### Count DE transcripts
+For a transcript to be considered differentially expressed, we require a p-value of 0.1 with a false discovery rate correction and a log fold count difference of 1.
+```{r}
+dt <- decideTests(tfit, p.value = 0.1, adjust.method = "fdr")
+summary(dt) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+dt.tib <- as_tibble(dt, rownames = NA) %>% 
+  rownames_to_column("transcript") %>% 
+  mutate_at(vars(starts_with("C")), as.numeric) %>% 
+  mutate_at(vars(starts_with("I")), as.numeric) %>% 
+  filter_at(vars(CtlvI1:I5vI14), any_vars(. != 0))
+```
+
+### Histogram of P-values
+```{r}
+hist(tfit$p.value, main = "P-values comparing groups (eBayes)")
+```
+
+
+### Volcano plot
+```{r, warning = FALSE, message = FALSE, fig.height = 10, fig.width = 7, fig.align = "center"}
+tmp1 <- topTreat(tfit, coef = 1, n = Inf)
+results1 <- mutate(tmp1, sig=ifelse(tmp1$adj.P.Val<0.1, "Sig", "Not Sig"))
+p1 <- ggplot(results1, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control vs. Infected, Day 1") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp2 <- topTreat(tfit, coef = 2, n = Inf)
+results2 <- mutate(tmp2, sig=ifelse(tmp2$adj.P.Val<0.1, "Sig", "Not Sig"))
+p2 <- ggplot(results2, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control vs. Infected, Day 3") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp3 <- topTreat(tfit, coef = 3, n = Inf)
+results3 <- mutate(tmp3, sig=ifelse(tmp3$adj.P.Val<0.1, "Sig", "Not Sig"))
+p3 <- ggplot(results3, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control vs. Infected, Day 5") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp4 <- topTreat(tfit, coef = 4, n = Inf)
+results4 <- mutate(tmp4, sig=ifelse(tmp4$adj.P.Val<0.1, "Sig", "Not Sig"))
+p4 <- ggplot(results4, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Control vs. Infected, Day 14") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp5 <- topTreat(tfit, coef = 5, n = Inf)
+results5 <- mutate(tmp5, sig=ifelse(tmp5$adj.P.Val<0.1, "Sig", "Not Sig"))
+p5 <- ggplot(results5, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Infected, Day 1 vs. Infected, Day 3") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+tmp6 <- topTreat(tfit, coef = 6, n = Inf)
+results6 <- mutate(tmp6, sig=ifelse(tmp6$adj.P.Val<0.1, "Sig", "Not Sig"))
+p6 <- ggplot(results6, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Infected, Day 3 vs. Infected, Day 5") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+
+tmp7 <- topTreat(tfit, coef = 7, n = Inf)
+results7 <- mutate(tmp7, sig=ifelse(tmp7$adj.P.Val<0.1, "Sig", "Not Sig"))
+p7 <- ggplot(results7, aes(logFC, -log10(P.Value))) +
+  geom_point(aes(col = sig)) +
+  scale_color_manual(values=c("black", "red")) +
+  ggtitle("Infected, Day 5 vs. Infected, Day 14") +
+  ylab("-Log10(Adjusted p-value)") +
+  xlab("Log(Fold count)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+grid.arrange(p1, p2, p3, p4, p5, p6, p7, nrow = 4)
+```

@@ -1,7 +1,7 @@
 ---
 title: "Late stage infection - Bursa - Transcript"
 author: "Jared J. Homola"
-date: "6/16/2020"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: html_document
 ---
 This is an analysis of differential expression at the transcript level between shedding rate groupings based on average shedding rates for infected blue-winged teal bursa tissue samples.
@@ -168,7 +168,7 @@ kable(allResults) %>%
 ```
 
 ### Volcano plot
-```{r, warning = FALSE, message = FALSE, fig.height = 10, fig.width = 10, fig.align = "center"}
+```{r, warning = FALSE, message = FALSE, fig.height = 6, fig.width = 10, fig.align = "center"}
 tmp1 <- topTreat(tfit.I5, coef = 1, n = Inf)
 results1 <- mutate(tmp1, sig=ifelse(tmp1$adj.P.Val<0.1, "Sig", "Not Sig"))
 p1 <- ggplot(results1, aes(logFC, -log10(P.Value))) +
@@ -206,54 +206,6 @@ p3 <- ggplot(results3, aes(logFC, -log10(P.Value))) +
 grid.arrange(p1, p2, p3, nrow = 1)
 ```
 
-
-### Heatmap
-```{r, warning = FALSE, message = FALSE, fig.height = 14, fig.width = 10, fig.align = "center"}
-# Get the gene names for DE genes
-lcpm2 <- as_tibble(dge.I5$counts) %>% 
-  cpm(., log = TRUE)
-
-newNames <- colnames(lcpm2) %>% 
-  as_tibble() %>% 
-  separate(value, into = c(NA, NA, NA, "sample", NA)) %>% 
-  bind_cols(covars.I5) %>% 
-  unite("newNames", ssgroup.virus.avg, group, bird)
-
-colOrder <- bind_cols(covars.I5) %>% 
-  mutate(ssgroup.virus.avg = fct_relevel(ssgroup.virus.avg, "LOW", "MODERATE", "HIGH")) %>%
-  arrange(ssgroup.virus.avg, group, bird) %>% 
-  unite("newNames", ssgroup.virus.avg, group, bird)
-
-colnames(lcpm2) <- newNames$newNames
-lcpm2 <- lcpm2[, colOrder$newNames]
-
-deGeneCounts <- lcpm2 %>% 
-  as_tibble() %>% 
-  mutate(gene = rownames(dge$counts)) %>% 
-  filter(gene %in% dt.tib$transcript) %>% 
-  column_to_rownames("gene") %>% 
-  as.matrix()
-
-## Set up palette
-mypalette <- brewer.pal(11,"RdYlBu")
-morecols <- colorRampPalette(mypalette)
-
-hc <- hclust(as.dist(1-cor(t(deGeneCounts))))
-
-# Plot the heatmap
-heatmap.2(deGeneCounts,
-          Colv = FALSE,
-          Rowv = as.dendrogram(hc),
-          col = rev(morecols(50)),
-          trace = "none",
-          colsep = c(5, 10),
-          dendrogram = "row",
-          density.info = "none",
-          key = TRUE,
-          #main = "Ileum - Gene level",
-          margins = c(10, 10),
-          scale ="row")
-```
 
 ### Annotations for differentially expressed transcripts
 ```{r message=FALSE, warning=FALSE}

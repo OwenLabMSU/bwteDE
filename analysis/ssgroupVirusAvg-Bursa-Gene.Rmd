@@ -1,7 +1,7 @@
 ---
 title: "Late stage infection - Bursa - Gene"
 author: "Jared J. Homola"
-date: "6/16/2020"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: html_document
 ---
 This is an analysis of differential expression at the gene level between shedding rate groupings based on average shedding rates for infected blue-winged teal bursa samples.

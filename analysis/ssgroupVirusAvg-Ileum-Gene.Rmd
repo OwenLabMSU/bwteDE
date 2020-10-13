@@ -209,7 +209,7 @@ grid.arrange(p1, p2, p3, nrow = 1)
 ```
 
 ### Heatmap
-```{r, warning = FALSE, message = FALSE, fig.height = 20, fig.width = 10, fig.align = "center"}
+```{r, warning = FALSE, message = FALSE, fig.height = 16, fig.width = 10, fig.align = "center"}
 # Get the gene names for DE genes
 lcpm2 <- as_tibble(dge.I5$counts) %>% 
   cpm(., log = TRUE)
@@ -326,11 +326,13 @@ aprioriPlotting <- function(target, ...) {
     filter(identifier == target) %>%
     mutate(SSgroup.virus.avg = fct_relevel(SSgroup.virus.avg, "LOW", "MODERATE", "HIGH")) %>%
     ggplot(aes(x = SSgroup.virus.avg, y = lcpm, fill = factor(group))) +
-    geom_boxplot() +
     facet_grid(. ~ tmpID, scales = "free", space = "free") +
     ylab("Log2(Counts per million)") +
     xlab("Shedding Group") +
-    scale_fill_grey(start = 0.35, end = 1) +
+    scale_fill_grey(start = 0.35, end = 1) + 
+    geom_point(position = position_dodge(width=0.75), aes(group = group), show.legend = FALSE) +
+    geom_boxplot(alpha = 0.5) +
+    geom_label_repel(aes(label = bird, group = group, fill = NULL), position = position_dodge(width=0.75), show.legend=FALSE) +
     theme_classic() +
     labs(title= paste0(target, " - ", annot.target[1,2])) +
     theme(legend.title = element_blank())

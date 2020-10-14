@@ -348,7 +348,7 @@ heatmap.2(deGeneCounts,
           density.info = "none",
           key = TRUE,
           #main = "Ileum - Gene level",
-          margins = c(10, 10),
+          margins = c(10, 20),
           scale ="row")
 ```
 

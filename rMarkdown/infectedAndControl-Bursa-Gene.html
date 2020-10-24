@@ -373,7 +373,7 @@ summary {
 
 <h1 class="title toc-ignore">LPAIV-infected and uninfected control groups - Bursa - Gene</h1>
 <h4 class="author">Jared J. Homola</h4>
-<h4 class="date">13 October, 2020</h4>
+<h4 class="date">24 October, 2020</h4>
 
 </div>
 
@@ -723,9 +723,8 @@ grid.arrange(p1, p2, p3, p4, p5, p6, p7, nrow = 4)</code></pre>
   ) %&gt;%
   rename(gene = gene_id) %&gt;% 
   inner_join(dt.tib) %&gt;% 
-  separate(sprot_Top_BLASTX_hit, into = c(&quot;sprot1&quot;, NA, NA, NA, NA, &quot;sprot2&quot;, NA), &quot;\\^&quot;) %&gt;% 
+  separate(sprot_Top_BLASTX_hit, into = c(&quot;SwissProt_GeneName&quot;, NA, NA, NA, NA, &quot;sprot2&quot;, NA), &quot;\\^&quot;) %&gt;% 
   separate(sprot2, sep = &quot;=&quot;, into = c(NA, &quot;SwissProt_GeneFunction&quot;)) %&gt;% 
-  separate(sprot1, sep = &quot;_&quot;, into = c(&quot;SwissProt_GeneName&quot;, NA)) %&gt;% 
   mutate_at(.vars = vars(CtlvI1:I5vI14),
             .funs = ~ ifelse(. == 1, &quot;up&quot;, .)) %&gt;% 
   mutate_at(.vars = vars(CtlvI1:I5vI14),
@@ -808,9 +807,8 @@ down
   ) %&gt;%
   rename(gene = gene_id) %&gt;% 
   inner_join(dt.tib) %&gt;% 
-  separate(sprot_Top_BLASTX_hit, into = c(&quot;sprot1&quot;, NA, NA, NA, NA, &quot;sprot2&quot;, NA), &quot;\\^&quot;) %&gt;% 
+  separate(sprot_Top_BLASTX_hit, into = c(&quot;SwissProt_GeneName&quot;, NA, NA, NA, NA, &quot;sprot2&quot;, NA), &quot;\\^&quot;) %&gt;% 
   separate(sprot2, sep = &quot;=&quot;, into = c(NA, &quot;SwissProt_GeneFunction&quot;)) %&gt;% 
-  separate(sprot1, sep = &quot;_&quot;, into = c(&quot;SwissProt_GeneName&quot;, NA)) %&gt;% 
   separate(Kegg, into = c(&quot;KEGG_ID&quot;, &quot;KO_ID&quot;), sep = &quot;\\`&quot;) %&gt;% 
   distinct(gene, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %&gt;% 
   select(gene, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %&gt;% 

@@ -274,9 +274,8 @@ heatmap.annot <- annot %>%
     transcript_id,
     sprot_Top_BLASTX_hit) %>% 
   filter(transcript_id %in% dt.tib$transcript) %>% 
-  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
-  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
   distinct(transcript_id, SwissProt_GeneName) %>% 
   filter(SwissProt_GeneName != ".")
 
@@ -307,7 +306,7 @@ heatmap.2(deGeneCounts,
           density.info = "none",
           key = TRUE,
           #main = "Ileum - Gene level",
-          margins = c(5, 10),
+          margins = c(10, 15),
           scale ="row")
 ```
 
@@ -335,8 +334,7 @@ aprioriPlotting <- function(target, ...) {
       transcript_id,
       sprot_Top_BLASTX_hit) %>%
     filter(transcript_id == target) %>% 
-    separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, NA, NA), "\\^") %>% 
-    separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA))
+    separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, NA, NA), "\\^")
   
   plot <- lcpm.DE %>%
     filter(identifier == target) %>%
@@ -370,9 +368,8 @@ annot %>%
   ) %>%
   rename(transcript = transcript_id) %>% 
   inner_join(dt.tib) %>% 
-  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
-  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
   mutate_at(.vars = vars(CtlvI1:I5vI14),
             .funs = ~ ifelse(. == 1, "up", .)) %>% 
   mutate_at(.vars = vars(CtlvI1:I5vI14),
@@ -393,9 +390,8 @@ annot %>%
   ) %>%
   rename(transcript = transcript_id) %>% 
   inner_join(dt.tib) %>% 
-  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
-  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
   separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% 
   distinct(transcript, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %>% 
   select(transcript, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>% 

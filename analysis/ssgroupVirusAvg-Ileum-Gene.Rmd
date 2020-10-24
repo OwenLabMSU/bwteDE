@@ -233,9 +233,8 @@ heatmap.annot <- annot %>%
     gene_id,
     sprot_Top_BLASTX_hit) %>% 
   filter(gene_id %in% dt.tib$gene) %>% 
-  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
-  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
   distinct(gene_id, SwissProt_GeneName) %>% 
   filter(SwissProt_GeneName != ".")
 
@@ -280,9 +279,8 @@ annot %>%
   ) %>%
   rename(gene = gene_id) %>% 
   inner_join(dt.tib) %>% 
-  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
-  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
   mutate_at(.vars = vars(LvM.I5:LvH.I5),
             .funs = ~ ifelse(. == 1, "up", .)) %>% 
   mutate_at(.vars = vars(LvM.I5:LvH.I5),
@@ -319,8 +317,7 @@ aprioriPlotting <- function(target, ...) {
       gene_id,
       sprot_Top_BLASTX_hit) %>%
     filter(gene_id == target) %>% 
-    separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, NA, NA), "\\^") %>% 
-    separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA))
+    separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, NA, NA), "\\^")
   
   plot <- lcpm.DE %>%
     filter(identifier == target) %>%
@@ -356,9 +353,8 @@ annot %>%
     Kegg) %>%
   rename(gene = gene_id) %>% 
   inner_join(dt.tib) %>% 
-  separate(sprot_Top_BLASTX_hit, into = c("sprot1", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
+  separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
-  separate(sprot1, sep = "_", into = c("SwissProt_GeneName", NA)) %>% 
   separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% 
   distinct(gene, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %>% 
   select(gene, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>% 

@@ -132,8 +132,7 @@ lcpm.all <- lcpm.bursa.tmp %>%
                         C1 = "Ctl",
                         C14 = "Ctl")) %>%
   mutate(group = factor(group,
-                        levels = c("Ctl", "I1", "I3", "I5", "I14"))) %>%
-  filter(group != "Ctl")
+                        levels = c("Ctl", "I1", "I3", "I5", "I14")))
 
 #### Gene query database ####
 annot.all <- annot %>%
@@ -164,59 +163,86 @@ candidateGeneAnalysis.Reg <- function(target, targetTissue, targetLevel, ...) {
   library(nlme)
 
   tryCatch({
-  filtered.dat <- lcpm.all %>%
-    filter(levelGT == targetLevel,
-           identifier == target,
-           tissue == targetTissue)
+    filtered.dat <- lcpm.all %>%
+      filter(levelGT == targetLevel,
+             identifier == target,
+             tissue == targetTissue) %>%
+      filter(group != "Ctl")
 
-  sum.overall <- filtered.dat %>%
-    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
-    anova(.)
-
-  overall.result <- as_tibble(sum.overall$`p-value`[2]) %>%
-    mutate(identifier = target,
-           subset = "all")
-
-  sum.I1 <- filtered.dat %>%
-    filter(group == "I1") %>%
-    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
-    anova(.)
-
-  I1.result <- as_tibble(sum.I1$`p-value`[2]) %>%
-    mutate(identifier = target,
-           subset = "I1")
-
-  sum.I3 <- filtered.dat %>%
-    filter(group == "I3") %>%
-    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
-    anova(.)
-
-  I3.result <- as_tibble(sum.I3$`p-value`[2]) %>%
-    mutate(identifier = target,
-           subset = "I3")
+    tryCatch({
+      sum.overall <- filtered.dat %>%
+        lme(lcpm ~ log.virus.sac + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
+        anova(.)},
+      error=function(err) NA)
 
 
-  sum.I5 <- filtered.dat %>%
-    filter(group == "I5") %>%
-    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
-    anova(.)
-
-  I5.result <- as_tibble(sum.I5$`p-value`[2]) %>%
-    mutate(identifier = target,
-           subset = "I5")
+    ifelse(exists("sum.overall"),
+           overall.result <- as_tibble(sum.overall$`p-value`[2]) %>%
+             mutate(identifier = target,
+                    subset = "Overall"),
+           overall.result <- data.frame("value" = NA, "identifier" = NA, "subset" = NA))
 
 
-  sum.I14 <- filtered.dat %>%
-    filter(group == "I14") %>%
-    lme(lcpm ~ log(virus.sac+0.01) + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
-    anova(.)
-
-  I14.result <- as_tibble(sum.I14$`p-value`[2]) %>%
-    mutate(identifier = target,
-           subset = "I14")
+    tryCatch({
+      sum.I1 <- filtered.dat %>%
+        filter(group == "I1") %>%
+        lme(lcpm ~ log.virus.sac + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
+        anova(.)},
+      error=function(err) NA)
 
 
-  bind_rows(overall.result, I1.result, I3.result, I5.result, I14.result)
+    ifelse(exists("sum.I1"),
+           I1.result <- as_tibble(sum.I1$`p-value`[2]) %>%
+             mutate(identifier = target,
+                    subset = "I1"),
+           I1.result <- data.frame("value" = NA, "identifier" = NA, "subset" = NA))
+
+    tryCatch({
+      sum.I3 <- filtered.dat %>%
+        filter(group == "I3") %>%
+        lme(lcpm ~ log.virus.sac + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
+        anova(.)},
+      error=function(err) NA)
+
+
+    ifelse(exists("sum.I3"),
+           I3.result <- as_tibble(sum.I3$`p-value`[2]) %>%
+             mutate(identifier = target,
+                    subset = "I3"),
+           I3.result <- data.frame("value" = NA, "identifier" = NA, "subset" = NA))
+
+
+    tryCatch({
+      sum.I5 <- filtered.dat %>%
+        filter(group == "I5") %>%
+        lme(lcpm ~ log.virus.sac + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
+        anova(.)},
+      error=function(err) NA)
+
+
+    ifelse(exists("sum.I5"),
+           I5.result <- as_tibble(sum.I5$`p-value`[2]) %>%
+             mutate(identifier = target,
+                    subset = "I5"),
+           I5.result <- data.frame("value" = NA, "identifier" = NA, "subset" = NA))
+
+
+    tryCatch({
+      sum.I14 <- filtered.dat %>%
+        filter(group == "I14") %>%
+        supressWarnings(lme(lcpm ~ log.virus.sac + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim"))) %>%
+        anova(.)},
+      error=function(err) NA)
+
+
+    ifelse(exists("sum.I14"),
+           I14.result <- as_tibble(sum.I14$`p-value`[2]) %>%
+             mutate(identifier = target,
+                    subset = "I14"),
+           I14.result <- data.frame("value" = NA, "identifier" = NA, "subset" = NA))
+
+
+    bind_rows(overall.result, I1.result, I3.result, I5.result, I14.result)
   }, error=function(e){})
 }
 
@@ -310,25 +336,25 @@ stopCluster(cl)
 
 ## Identify significant patterns using the overall dataset
 finalMatrix.BG.sig <- finalMatrix.BG %>%
-  filter(subset == "all") %>%
+  filter(subset == "Overall") %>%
   mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.05) %>%
   mutate(comparison = "BG")
 
 finalMatrix.BT.sig <- finalMatrix.BT %>%
-  filter(subset == "all") %>%
+  filter(subset == "Overall") %>%
   mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.05) %>%
   mutate(comparison = "BT")
 
 finalMatrix.IG.sig <- finalMatrix.IG %>%
-  filter(subset == "all") %>%
+  filter(subset == "Overall") %>%
   mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.05) %>%
   mutate(comparison = "IG")
 
 finalMatrix.IT.sig <- finalMatrix.IT %>%
-  filter(subset == "all") %>%
+  filter(subset == "Overall") %>%
   mutate(adj.p.value = p.adjust(value, method='fdr', n = nrow(.))) %>%
   filter(adj.p.value < 0.05) %>%
   mutate(comparison = "IT")
@@ -378,4 +404,4 @@ remove(
   targets
 )
 
-save.image("candidateGeneAnalysis_regression-NoCtl.Rws")
+save.image("candidateGeneAnalysis_regression-NoCtl2.Rws")

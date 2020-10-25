@@ -11,9 +11,10 @@ These analyses examine the relationship between expression levels and viral tite
   2. Subset our overall set of transcripts to include only those with an annotation containing the name of the candidate gene in the SwissProt gene name, SwissProt gene function, KEGG pathway, or EggNOG gene orthology annotations.  
   3. Manually filter search results to remove non-target inclusions  
   4. Remove transcripts with no variation in expression for each comparison (e.g., bursa at transcript-level)  
-  5. Use a linear mixed effects model to assess the relationship between log(expression) and log(viral titer) for each candidate gene/transcript. The model structure is expression ~ virus shedding group + sex + weight on day 55 + age with the sequencing pool as a random effect. The model is run on the entire set, as well as just on treatment groups I1, I3, I5, and I14.
-  6. Correct the p-values for multiple testing using a false discovery rate approach with adjusted p-values (i.e., q-value) cutoff of 0.05. Corrections are used for just the test that incorporates all treatment groups because that is the only one used for filtering.
-  7. Plot the results  
+  5. Remove control samples
+  6. Use a linear mixed effects model to assess the relationship between log(expression) and log(viral titer) for each candidate gene/transcript. The model structure is expression ~ virus shedding group + sex + weight on day 55 + age with the sequencing pool as a random effect. The model is run on the entire set, as well as just on treatment groups I1, I3, I5, and I14.
+  7. Correct the p-values for multiple testing using a false discovery rate approach with adjusted p-values (i.e., q-value) cutoff of 0.05. Corrections are used for just the test that incorporates all treatment groups because that is the only one used for filtering.
+  8. Plot the results  
   
   
 ```{r setup, include=FALSE}
@@ -28,6 +29,18 @@ library(tidyverse)
 library(kableExtra)
 library(edgeR)
 library(ggrepel)
+
+targets <- c("DN135990_c0_g1",
+             "DN10817_c0_g1",
+             "DN17714_c0_g1",
+             "DN135990_c0_g2",
+             "DN7314_c1_g2",
+             "DN12097_c0_g2",
+             "DN15897_c0_g1",
+             "DN7314_c1_g1",
+             "DN8513_c3_g2",
+             "DN8513_c3_g1",
+             "DN11336_c0_g1")
 ```
 
 ## Summarize results
@@ -36,6 +49,7 @@ sigResults2 <- sigResults %>%
   mutate(tmp = paste0(identifier, "-", comparison))
 
 results.table <- allResults %>%
+  na.omit() %>% 
   mutate(tmp = paste0(identifier, "-", comparison)) %>% 
   pivot_wider(names_from = subset, values_from = value) %>% 
   filter(tmp %in% sigResults2$tmp) %>% 
@@ -44,7 +58,9 @@ results.table <- allResults %>%
 kable(results.table) %>%
   kable_styling("striped", full_width = F)
 ```
+
 ## Functions for analyzing and plotting data
+Note: The control samples are plotted, but they are not factored into the displayed regression line
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
 correlationPlot <- function(target, targetTissue, targetLevel, ...) {
   annotation <- annot.all %>%
@@ -62,13 +78,19 @@ correlationPlot <- function(target, targetTissue, targetLevel, ...) {
   targetInfo1 <- sigResults %>% 
     filter(identifier == target)
   
+  nonCtl <- lcpm.all %>%
+    filter(levelGT == targetLevel,
+           tissue == targetTissue) %>% 
+    filter(identifier == target,
+           group != "Ctl")
+  
   plot <- lcpm.all %>%
     filter(levelGT == targetLevel,
            tissue == targetTissue) %>% 
     filter(identifier == target) %>% 
     ggplot(aes(x = log.virus.sac, y = lcpm)) +
     geom_point(aes(shape = group, color = group), size = 5) +
-    geom_smooth(method = "lm", color = "black") +
+    geom_smooth(data = nonCtl, method = "lm", color = "black") +
     ylab("Log2(Counts per million)") +
     xlab("Log10(Sacrifice day viral titer + 1)") +
     scale_shape_manual(values=c(13, 15:18),
@@ -95,7 +117,7 @@ correlationPlot <- function(target, targetTissue, targetLevel, ...) {
 
 ```
 
-## Plotting significant results
+## Plotting sig results
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
 for(z in (1:nrow(results.table))) {
   targetInfo <- results.table %>% 

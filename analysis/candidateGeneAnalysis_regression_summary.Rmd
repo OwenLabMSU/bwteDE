@@ -19,7 +19,7 @@ These analyses examine the relationship between expression levels and viral tite
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/")
-load("candidateGeneAnalysis_regression-NoCtl.Rws")
+load("candidateGeneAnalysis_regression-NoCtl2.Rws")
 ```
 
 ```{r message = FALSE, warning = FALSE, echo = FALSE, results = 'hide'}

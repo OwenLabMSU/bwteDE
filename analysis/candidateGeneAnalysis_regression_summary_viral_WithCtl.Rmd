@@ -59,7 +59,6 @@ kable(results.table) %>%
 ```
 
 ## Functions for analyzing and plotting data
-Note: The control samples are plotted, but they are not factored into the displayed regression line
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
 correlationPlot <- function(target, targetTissue, targetLevel, ...) {
   annotation <- annot.all %>%
@@ -110,7 +109,7 @@ correlationPlot <- function(target, targetTissue, targetLevel, ...) {
 
 ```
 
-## Plotting sig results
+## Plotting results
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
 for(z in (1:nrow(results.table))) {
   targetInfo <- results.table %>% 

@@ -60,7 +60,6 @@ kable(results.table) %>%
 ```
 
 ## Functions for analyzing and plotting data
-Note: The control samples are plotted, but they are not factored into the displayed regression line
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
 correlationPlot <- function(target, targetTissue, targetLevel, ...) {
   annotation <- annot.all %>%
@@ -96,7 +95,8 @@ correlationPlot <- function(target, targetTissue, targetLevel, ...) {
                                   paste0("I3: ","P-value = ", round(filter(legendData, subset == "I3")$value, 3)), 
                                   paste0("I5: ","P-value = ", round(filter(legendData, subset == "I5")$value, 3)),
                                   paste0("I14: ","P-value = ", round(filter(legendData, subset == "I14")$value, 3)))) +
-    scale_color_manual(values = c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442"),
+    scale_color_manual(values = c(#"#000000", 
+                                  "#E69F00", "#56B4E9", "#009E73", "#F0E442"),
                        name = "Group", 
                        labels = c(#"Ctl",
                                   paste0("I1: ","P-value = ", round(filter(legendData, subset == "I1")$value, 3)), 
@@ -113,7 +113,7 @@ correlationPlot <- function(target, targetTissue, targetLevel, ...) {
 
 ```
 
-## Plotting sig results
+## Plotting results
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
 for(z in (1:nrow(results.table))) {
   targetInfo <- results.table %>% 

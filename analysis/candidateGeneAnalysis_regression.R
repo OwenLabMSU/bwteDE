@@ -102,7 +102,7 @@ lcpm.trans <- lcpm.bursa.tmp %>%
   mutate(levelGT = "transcript", identifier = transcript) %>%
   select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac, group, age, sex, wt_55, Pool.Bursa, Pool.Ileum) %>%
   mutate(pool = ifelse(tissue == "Bursa", Pool.Bursa, Pool.Ileum)) %>%
-  mutate(log.virus.sac = log10(virus.sac+1))
+  mutate(log.virus.sac = log(virus.sac+0.01))
 
 
 # Gene
@@ -126,7 +126,7 @@ lcpm.all <- lcpm.bursa.tmp %>%
   mutate(levelGT = "gene", identifier = gene) %>%
   select(identifier, levelGT, tissue, bird, lcpm, virus.sac, SSgroup.virus.sac, group, age, sex, wt_55, Pool.Bursa, Pool.Ileum) %>%
   mutate(pool = ifelse(tissue == "Bursa", Pool.Bursa, Pool.Ileum)) %>%
-  mutate(log.virus.sac = log10(virus.sac+1)) %>%
+  mutate(log.virus.sac = log(virus.sac+0.01)) %>%
   bind_rows(lcpm.trans) %>%
   mutate(group = recode(group,
                         C1 = "Ctl",
@@ -166,8 +166,8 @@ candidateGeneAnalysis.Reg <- function(target, targetTissue, targetLevel, ...) {
     filtered.dat <- lcpm.all %>%
       filter(levelGT == targetLevel,
              identifier == target,
-             tissue == targetTissue) %>%
-      filter(group != "Ctl")
+             tissue == targetTissue)# %>%
+     #filter(group != "Ctl")
 
     tryCatch({
       sum.overall <- filtered.dat %>%
@@ -230,7 +230,7 @@ candidateGeneAnalysis.Reg <- function(target, targetTissue, targetLevel, ...) {
     tryCatch({
       sum.I14 <- filtered.dat %>%
         filter(group == "I14") %>%
-        supressWarnings(lme(lcpm ~ log.virus.sac + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim"))) %>%
+        lme(lcpm ~ log.virus.sac + age + factor(sex) + wt_55, random = ~1|pool, data = ., control = lmeControl(opt = "optim")) %>%
         anova(.)},
       error=function(err) NA)
 
@@ -404,4 +404,4 @@ remove(
   targets
 )
 
-save.image("candidateGeneAnalysis_regression-NoCtl2.Rws")
+save.image("candidateGeneAnalysis_regression-Ctl.Rws")

@@ -1,0 +1,114 @@
+---
+title: "Candidate Gene Analysis, Regression method, with controls"
+author: "Jared J. Homola"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+These analyses examine the relationship between expression levels and viral titer for a set of genes that we hypothesize have a relationship with viral infection. The overall strategy is to:  
+  
+  1. Identify a list of candidate genes based on the literature and previous analyses.    
+  2. Subset our overall set of transcripts to include only those with an annotation containing the name of the candidate gene in the SwissProt gene name, SwissProt gene function, KEGG pathway, or EggNOG gene orthology annotations.  
+  3. Manually filter search results to remove non-target inclusions  
+  4. Remove transcripts with no variation in expression for each comparison (e.g., bursa at transcript-level)  
+  5. Use a linear mixed effects model to assess the relationship between log(expression) and log(viral titer) for each candidate gene/transcript. The model structure is expression ~ virus shedding group + sex + weight on day 55 + age with the sequencing pool as a random effect. The model is run on the entire set, as well as just on treatment groups I1, I3, I5, and I14.
+  6. Correct the p-values for multiple testing using a false discovery rate approach with adjusted p-values (i.e., q-value) cutoff of 0.05. Corrections are used for just the test that incorporates all treatment groups because that is the only one used for filtering.
+  7. Plot the results  
+   
+  
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("G:/Shared drives/RNA Seq Supershedder Project/BWTE DE manuscript/")
+load("candidateGeneAnalysis_regression-Ctl.Rws")
+```
+
+```{r message = FALSE, warning = FALSE, echo = FALSE, results = 'hide'}
+## Load packages and data
+library(tidyverse)
+library(kableExtra)
+library(edgeR)
+library(ggrepel)
+```
+
+## Summarize results
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+sigResults2 <- sigResults %>% 
+  mutate(tmp = paste0(identifier, "-", comparison))
+
+results.table <- allResults %>%
+  na.omit() %>% 
+  mutate(tmp = paste0(identifier, "-", comparison)) %>% 
+  pivot_wider(names_from = subset, values_from = value) %>% 
+  filter(tmp %in% sigResults2$tmp) %>% 
+  select(-tmp)
+
+kable(results.table) %>%
+  kable_styling("striped", full_width = F)
+```
+
+## Functions for analyzing and plotting data
+Note: The control samples are plotted, but they are not factored into the displayed regression line
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+correlationPlot <- function(target, targetTissue, targetLevel, ...) {
+  annotation <- annot.all %>%
+    filter(transcript_id == target | gene_id == target) %>%
+    filter(sprot_geneName_BlastX != ".") %>%
+    select(sprot_geneName_BlastX) %>%
+    slice(1)
+  
+  legendData <- allResults %>% 
+    filter(identifier == target) %>% 
+    mutate(tissue = if_else(comparison == "BG" | comparison == "BT", "Bursa", "Ileum")) %>% 
+    mutate(level = if_else(comparison == "BG" | comparison == "IG", "gene", "transcript")) %>% 
+    filter(tissue == targetTissue, level == targetLevel)
+  
+  targetInfo1 <- sigResults %>% 
+    filter(identifier == target)
+  
+  plot <- lcpm.all %>%
+    filter(levelGT == targetLevel,
+           tissue == targetTissue) %>% 
+    filter(identifier == target) %>% 
+    ggplot(aes(x = log.virus.sac, y = lcpm)) +
+    geom_point(aes(shape = group, color = group), size = 5) +
+    geom_smooth(method = "lm", color = "black") +
+    ylab("Log2(Counts per million)") +
+    xlab("Log10(Sacrifice day viral titer + 1)") +
+    scale_shape_manual(values=c(13, 
+                                15:18),
+                       name = "Group", 
+                       labels = c("Ctl",
+                                  paste0("I1: ","P-value = ", round(filter(legendData, subset == "I1")$value, 3)), 
+                                  paste0("I3: ","P-value = ", round(filter(legendData, subset == "I3")$value, 3)), 
+                                  paste0("I5: ","P-value = ", round(filter(legendData, subset == "I5")$value, 3)),
+                                  paste0("I14: ","P-value = ", round(filter(legendData, subset == "I14")$value, 3)))) +
+    scale_color_manual(values = c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442"),
+                       name = "Group", 
+                       labels = c("Ctl",
+                                  paste0("I1: ","P-value = ", round(filter(legendData, subset == "I1")$value, 3)), 
+                                  paste0("I3: ","P-value = ", round(filter(legendData, subset == "I3")$value, 3)), 
+                                  paste0("I5: ","P-value = ", round(filter(legendData, subset == "I5")$value, 3)),
+                                  paste0("I14: ","P-value = ", round(filter(legendData, subset == "I14")$value, 3)))) +
+    guides(shape = guide_legend(override.aes = list(size = 5))) +
+    theme_classic() +
+    labs(title=paste0(annotation[1], " - ", target),
+         subtitle=paste0(targetTissue, " - ", targetLevel,
+                         "; Adj. p = ", round(targetInfo1$adj.p.value, 5)))
+  print(plot)
+}
+
+```
+
+## Plotting significant results
+```{r, message = FALSE, warning = FALSE, echo = FALSE}
+for(z in (1:nrow(results.table))) {
+  targetInfo <- results.table %>% 
+    slice(z) %>% 
+    mutate(tissue = if_else(comparison == "BG" | comparison == "BT", "Bursa", "Ileum")) %>% 
+    mutate(level = if_else(comparison == "BG" | comparison == "IG", "gene", "transcript"))
+
+  correlationPlot(targetInfo$identifier, targetInfo$tissue, targetInfo$level)
+
+}
+```

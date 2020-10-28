@@ -175,8 +175,8 @@ candidateGeneAnalysis.Reg <- function(target, targetTissue, targetLevel, ...) {
   filtered.dat <- lcpm.all %>%
     filter(levelGT == targetLevel,
            identifier == target,
-           tissue == targetTissue) %>%
-    filter(group != "Ctl")
+           tissue == targetTissue) #%>%
+    #filter(group != "Ctl")
 
   tryCatch({
     sum.overall <- filtered.dat %>%
@@ -416,4 +416,4 @@ remove(
   targets
 )
 
-save.image("candidateGeneAnalysis_regression-viral.Rws")
+save.image("candidateGeneAnalysis_regression-viral-Ctl.Rws")

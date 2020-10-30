@@ -373,7 +373,7 @@ summary {
 
 <h1 class="title toc-ignore">Late stage infection - Bursa - Gene</h1>
 <h4 class="author">Jared J. Homola</h4>
-<h4 class="date">23 October, 2020</h4>
+<h4 class="date">29 October, 2020</h4>
 
 </div>
 
@@ -653,41 +653,36 @@ grid.arrange(p1, p2, p3, nrow = 1)</code></pre>
 </div>
 <div id="annotations-for-differentially-expressed-genes" class="section level3">
 <h3>Annotations for differentially expressed genes</h3>
-<pre class="r"><code>annot %&gt;%
-  select(
-    gene_id,
-    sprot_Top_BLASTX_hit
-  ) %&gt;%
-  rename(gene = gene_id) %&gt;% 
-  inner_join(dt.tib) %&gt;% 
-  separate(sprot_Top_BLASTX_hit, into = c(&quot;SwissProt_GeneName&quot;, NA, NA, NA, NA, &quot;sprot2&quot;, NA), &quot;\\^&quot;) %&gt;% 
-  separate(sprot2, sep = &quot;=&quot;, into = c(NA, &quot;SwissProt_GeneFunction&quot;)) %&gt;% 
-  mutate_at(.vars = vars(LvM.I5:LvH.I5),
-            .funs = ~ ifelse(. == 1, &quot;up&quot;, .)) %&gt;% 
-  mutate_at(.vars = vars(LvM.I5:LvH.I5),
-            .funs = ~ ifelse(. == -1, &quot;down&quot;, .)) %&gt;% 
-  filter_at(vars(LvM.I5:LvH.I5), any_vars(. != 0)) %&gt;% 
-  distinct(gene, .keep_all = TRUE) %&gt;% 
-  select(-SwissProt_GeneFunction) %&gt;% 
+<p>ns denotes non-significant genes for each comparison and numerical values are the log(fold count) difference</p>
+<pre class="r"><code>tmp1a &lt;- tmp1 %&gt;% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %&gt;% separate(sprot_Top_BLASTX_hit, into = c(&quot;SwissProt_GeneName&quot;, NA, NA, NA, NA, &quot;sprot2&quot;, NA), &quot;\\^&quot;) %&gt;%   separate(sprot2, sep = &quot;=&quot;, into = c(NA, &quot;SwissProt_GeneFunction&quot;)) %&gt;%  separate(Kegg, into = c(&quot;KEGG_ID&quot;, &quot;KO_ID&quot;), sep = &quot;\\`&quot;) %&gt;%  mutate(comp = &quot;LvM&quot;)
+tmp2a &lt;- tmp2 %&gt;% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %&gt;% separate(sprot_Top_BLASTX_hit, into = c(&quot;SwissProt_GeneName&quot;, NA, NA, NA, NA, &quot;sprot2&quot;, NA), &quot;\\^&quot;) %&gt;%   separate(sprot2, sep = &quot;=&quot;, into = c(NA, &quot;SwissProt_GeneFunction&quot;)) %&gt;%  separate(Kegg, into = c(&quot;KEGG_ID&quot;, &quot;KO_ID&quot;), sep = &quot;\\`&quot;) %&gt;% mutate(comp = &quot;MvH&quot;)
+tmp3a &lt;- tmp3 %&gt;% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %&gt;% separate(sprot_Top_BLASTX_hit, into = c(&quot;SwissProt_GeneName&quot;, NA, NA, NA, NA, &quot;sprot2&quot;, NA), &quot;\\^&quot;) %&gt;%   separate(sprot2, sep = &quot;=&quot;, into = c(NA, &quot;SwissProt_GeneFunction&quot;)) %&gt;%  separate(Kegg, into = c(&quot;KEGG_ID&quot;, &quot;KO_ID&quot;), sep = &quot;\\`&quot;) %&gt;% mutate(comp = &quot;LvH&quot;)
+
+bind_rows(tmp1a, tmp2a, tmp3a) %&gt;% 
+  select(-SwissProt_GeneFunction, -KEGG_ID, -KO_ID) %&gt;% 
+  filter(gene_id %in% dt.tib$gene) %&gt;% 
+  mutate(logFoldCount = ifelse(adj.P.Val &lt; 0.10, round(logFC, 2), &quot;ns&quot;)) %&gt;% 
+  select(-adj.P.Val, -logFC) %&gt;% 
+  pivot_wider(names_from = comp, values_from = logFoldCount) %&gt;% 
   kable() %&gt;%
   kable_styling(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;, &quot;responsive&quot;))</code></pre>
 <table class="table table-striped table-hover table-condensed table-responsive" style="margin-left: auto; margin-right: auto;">
 <thead>
 <tr>
 <th style="text-align:left;">
-gene
+gene_id
 </th>
 <th style="text-align:left;">
 SwissProt_GeneName
 </th>
 <th style="text-align:left;">
-LvM.I5
+LvM
 </th>
-<th style="text-align:right;">
-MvH.I5
+<th style="text-align:left;">
+MvH
 </th>
-<th style="text-align:right;">
-LvH.I5
+<th style="text-align:left;">
+LvH
 </th>
 </tr>
 </thead>
@@ -700,39 +695,30 @@ DN24349_c0_g3
 .
 </td>
 <td style="text-align:left;">
-up
+9.33
 </td>
-<td style="text-align:right;">
-0
+<td style="text-align:left;">
+ns
 </td>
-<td style="text-align:right;">
-0
+<td style="text-align:left;">
+ns
 </td>
 </tr>
 </tbody>
 </table>
 <div id="gene-functions" class="section level4">
 <h4>Gene functions</h4>
-<pre class="r"><code>annot %&gt;%
-  select(
-    gene_id,
-    sprot_Top_BLASTX_hit,
-    Kegg) %&gt;%
-  rename(gene = gene_id) %&gt;% 
-  inner_join(dt.tib) %&gt;% 
-  separate(sprot_Top_BLASTX_hit, into = c(&quot;SwissProt_GeneName&quot;, NA, NA, NA, NA, &quot;sprot2&quot;, NA), &quot;\\^&quot;) %&gt;% 
-  separate(sprot2, sep = &quot;=&quot;, into = c(NA, &quot;SwissProt_GeneFunction&quot;)) %&gt;% 
-  separate(Kegg, into = c(&quot;KEGG_ID&quot;, &quot;KO_ID&quot;), sep = &quot;\\`&quot;) %&gt;% 
-  distinct(gene, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %&gt;% 
-  select(gene, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %&gt;% 
-  filter(SwissProt_GeneName != &quot;.&quot;) %&gt;% 
+<pre class="r"><code>bind_rows(tmp1a, tmp2a, tmp3a) %&gt;% 
+  select(-comp, -adj.P.Val, -logFC) %&gt;% 
+  filter(gene_id %in% dt.tib$gene) %&gt;% 
+  distinct(.) %&gt;% filter(SwissProt_GeneName != &quot;.&quot;) %&gt;% 
   kable() %&gt;%
   kable_styling(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;, &quot;responsive&quot;))</code></pre>
 <table class="table table-striped table-hover table-condensed table-responsive" style="margin-left: auto; margin-right: auto;">
 <thead>
 <tr>
 <th style="text-align:left;">
-gene
+gene_id
 </th>
 <th style="text-align:left;">
 SwissProt_GeneName

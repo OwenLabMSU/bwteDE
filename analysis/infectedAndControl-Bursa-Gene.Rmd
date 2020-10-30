@@ -242,46 +242,35 @@ grid.arrange(p1, p2, p3, p4, p5, p6, p7, nrow = 4)
 
 
 ### Annotations for differentially expressed genes
+ns denotes non-significant genes for each comparison and numerical values are the log(fold count) difference
 ```{r message=FALSE, warning=FALSE}
-annot %>%
-  select(
-    gene_id,
-    sprot_Top_BLASTX_hit
-  ) %>%
-  rename(gene = gene_id) %>% 
-  inner_join(dt.tib) %>% 
-  separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
-  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
-  mutate_at(.vars = vars(CtlvI1:I5vI14),
-            .funs = ~ ifelse(. == 1, "up", .)) %>% 
-  mutate_at(.vars = vars(CtlvI1:I5vI14),
-            .funs = ~ ifelse(. == -1, "down", .)) %>% 
-  distinct(gene, SwissProt_GeneName, .keep_all = TRUE) %>% 
-  select(-SwissProt_GeneFunction) %>% 
+tmp1a <- tmp1 %>% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %>% separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>%  mutate(comp = "CtlvI1")
+tmp2a <- tmp2 %>% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %>% separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% mutate(comp = "CtlvI3")
+tmp3a <- tmp3 %>% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %>% separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% mutate(comp = "CtlvI5")
+tmp4a <- tmp4 %>% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %>% separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% mutate(comp = "CtlvI14")
+tmp5a <- tmp5 %>% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %>% separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% mutate(comp = "I1vI3")
+tmp6a <- tmp6 %>% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %>% separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% mutate(comp = "I3vI5")
+tmp7a <- tmp7 %>% select(gene_id, adj.P.Val, logFC, sprot_Top_BLASTX_hit, Kegg) %>% separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>%   separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>%  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% mutate(comp = "I5vI14")
+
+bind_rows(tmp1a, tmp2a, tmp3a, tmp4a, tmp5a, tmp6a, tmp7a) %>% 
+  select(-SwissProt_GeneFunction, -KEGG_ID, -KO_ID) %>% 
+  filter(gene_id %in% dt.tib$gene) %>% 
+  mutate(logFoldCount = ifelse(adj.P.Val < 0.10, round(logFC, 2), "ns")) %>% 
+  select(-adj.P.Val, -logFC) %>% 
+  pivot_wider(names_from = comp, values_from = logFoldCount) %>% 
   kable() %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```
 
 #### Gene functions
 ```{r message=FALSE, warning=FALSE}
-annot %>%
-  select(
-    gene_id,
-    sprot_Top_BLASTX_hit,
-    Kegg
-  ) %>%
-  rename(gene = gene_id) %>% 
-  inner_join(dt.tib) %>% 
-  separate(sprot_Top_BLASTX_hit, into = c("SwissProt_GeneName", NA, NA, NA, NA, "sprot2", NA), "\\^") %>% 
-  separate(sprot2, sep = "=", into = c(NA, "SwissProt_GeneFunction")) %>% 
-  separate(Kegg, into = c("KEGG_ID", "KO_ID"), sep = "\\`") %>% 
-  distinct(gene, SwissProt_GeneName, KEGG_ID, .keep_all = TRUE) %>% 
-  select(gene, SwissProt_GeneName, SwissProt_GeneFunction, KEGG_ID, KO_ID) %>% 
-  filter(SwissProt_GeneName != ".") %>% 
+bind_rows(tmp1a, tmp2a, tmp3a, tmp4a, tmp5a, tmp6a, tmp7a) %>% 
+  select(-comp, -adj.P.Val, -logFC) %>% 
+  filter(gene_id %in% dt.tib$gene) %>% 
+  distinct(.) %>% filter(SwissProt_GeneName != ".") %>% 
   kable() %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```
-
 
 ### Gene Ontology Enrichment Analysis
 ```{r message=FALSE, warning=FALSE}

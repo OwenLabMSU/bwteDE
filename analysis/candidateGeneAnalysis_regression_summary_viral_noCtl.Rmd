@@ -1,5 +1,5 @@
 ---
-title: "Candidate Gene Analysis, Regression method, viral genes, without controls"
+title: "Candidate Gene Analysis, Regression method, host genes, without controls"
 author: "Jared J. Homola"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: html_document
